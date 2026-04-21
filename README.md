@@ -23,3 +23,9 @@ Land to Market Chain of Custody application.
 - Supabase: https://supabase.com/dashboard/project/[id]
 - Vercel: https://vercel.com/karinbrothers/l2m-coc
 - GitHub: https://github.com/karinbrothers/l2m-coc
+
+## Deployment
+
+**Live (development):** https://l2m-coc.vercel.app
+
+Auto-deploys to Vercel on push to `main`.
