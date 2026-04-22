@@ -2,8 +2,13 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 /**
- * Refreshes the Supabase auth session on every request.
- * Called from the root middleware.ts — see Next.js middleware docs.
+ * Refreshes the Supabase auth session on every request AND enforces
+ * authentication on protected routes. Called from the root `src/middleware.ts`.
+ *
+ * Behaviour:
+ *  - Unauthenticated user on any route except /login or /auth/* → redirect to /login
+ *  - Authenticated user on /login → redirect to / (already signed in)
+ *  - Everyone else → pass through, session cookie refreshed
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -30,7 +35,30 @@ export async function updateSession(request: NextRequest) {
   )
 
   // IMPORTANT: keep this getUser() call — it refreshes the session cookie.
-  await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const { pathname } = request.nextUrl
+  const isAuthRoute =
+    pathname === '/login' || pathname.startsWith('/auth/')
+
+  // Not signed in and not already on an auth route → send to /login
+  if (!user && !isAuthRoute) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    // Preserve the intended destination so /auth/callback can bounce back there.
+    url.searchParams.set('next', pathname)
+    return NextResponse.redirect(url)
+  }
+
+  // Already signed in and visiting /login → go to home
+  if (user && pathname === '/login') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/'
+    url.search = ''
+    return NextResponse.redirect(url)
+  }
 
   return supabaseResponse
 }

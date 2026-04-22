@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { createClient } from "@/lib/supabase/server";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,11 +19,16 @@ export const metadata: Metadata = {
     "Land to Market — verified grazing supply chain tracking from landbase to brand.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return (
     <html lang="en">
       <body
@@ -35,9 +41,23 @@ export default function RootLayout({
               <h1 className="text-base font-semibold tracking-tight">
                 Land to Market — Chain of Custody
               </h1>
-              <span className="text-xs text-white/70">
-                v0.1 · development
-              </span>
+              <div className="flex items-center gap-4 text-xs">
+                {user ? (
+                  <>
+                    <span className="text-white/80">{user.email}</span>
+                    <form action="/auth/signout" method="post">
+                      <button
+                        type="submit"
+                        className="rounded border border-white/30 px-2 py-1 text-white/90 hover:bg-white/10"
+                      >
+                        Sign out
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <span className="text-white/70">v0.1 · development</span>
+                )}
+              </div>
             </div>
           </header>
 
