@@ -29,6 +29,18 @@ export default async function RootLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Fetch the signed-in user's role so we can conditionally show admin links.
+  // Keep this cheap: single row, one column.
+  let isAdmin = false;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    isAdmin = profile?.role === "admin";
+  }
+
   return (
     <html lang="en">
       <body
@@ -98,6 +110,20 @@ export default async function RootLayout({
                 >
                   Certificates
                 </a>
+
+                {isAdmin ? (
+                  <>
+                    <div className="mt-4 px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Admin
+                    </div>
+                    <a
+                      className="rounded px-2 py-1.5 text-slate-700 hover:bg-slate-100"
+                      href="/admin/invitations"
+                    >
+                      Invitations
+                    </a>
+                  </>
+                ) : null}
               </nav>
             </aside>
 

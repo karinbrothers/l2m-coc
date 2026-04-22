@@ -28,8 +28,11 @@ export async function sendMagicLink(formData: FormData) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      // Open signup for MVP — Day 5's admin invite flow will replace this.
-      shouldCreateUser: true,
+      // Invite-only as of Day 5. Unknown emails get a "Signups not allowed"
+      // error from Supabase, which we surface on the login page. Admins use
+      // /admin/invitations (which calls signInWithOtp with shouldCreateUser:
+      // true) to onboard new users.
+      shouldCreateUser: false,
       emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   })
