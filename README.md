@@ -42,3 +42,12 @@ Auto-deploys to Vercel on push to `main`.
 
 **Next:** Day 7 — Sales page + mass-balance check (can't sell more than you have on hand).
 
+
+### Day 7 — Sales + mass balance (2026-04-23)
+
+- `sales` table with org-scoped codes (SALE-YYYY-NNNN) and FK to source purchase.
+- `record_sale()` Postgres function: row-locks source purchase, validates volume, decrements `volume_remaining`, inserts sale — all atomic. Raises `insufficient_volume` / `source_not_found` / `no_organization` on errors.
+- Sales list page with summary cards (count, volume sold, unique buyers) and nested join to show source purchase code + landbase.
+- New sale form with source-purchase picker (only shows purchases with `volume_remaining > 0`).
+- Verified mass balance end-to-end: sold 3t from WOOL-2026-0001, inventory dropped 10 → 7.
+
