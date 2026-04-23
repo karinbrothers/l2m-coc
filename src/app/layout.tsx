@@ -100,7 +100,7 @@ export default async function RootLayout({
                 </a>
                 <a
                   className="rounded px-2 py-1.5 text-slate-700 hover:bg-slate-100"
-                  href="#"
+                  href="/sales"
                 >
                   Sales
                 </a>
