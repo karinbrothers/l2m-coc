@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 
 /**
  * Server-side auth gate for any authenticated page or action that needs an
- * org-scoped profile. This is the "member-or-admin" counterpart to
+ * org-scoped profile. This is the "partner-or-admin" counterpart to
  * requireAdmin().
  */
 export async function requireUser() {
@@ -36,7 +36,7 @@ export async function requireUser() {
     id: profile.id,
     email: profile.email,
     full_name: profile.full_name,
-    role: profile.role as 'admin' | 'member',
+    role: profile.role as 'admin' | 'partner',
     organization_id: profile.organization_id as string,
   }
 }

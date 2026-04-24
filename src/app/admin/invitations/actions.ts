@@ -23,13 +23,13 @@ export async function createInvitation(formData: FormData) {
   const admin = await requireAdmin()
 
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
-  const role = String(formData.get('role') ?? 'member')
+  const role = String(formData.get('role') ?? 'partner')
 
   if (!email) {
     redirect('/admin/invitations?error=missing_email')
   }
 
-  if (role !== 'admin' && role !== 'member') {
+  if (role !== 'admin' && role !== 'partner') {
     redirect('/admin/invitations?error=invalid_role')
   }
 

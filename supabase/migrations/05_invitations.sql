@@ -12,7 +12,7 @@
 --      with the invite's organization_id + role (instead of NULL/member).
 --      It also marks the invitation as accepted.
 --   4. If no invitation exists (dev-only signup, or legacy flow), the trigger
---      falls back to the Day 4 default: organization_id = NULL, role = 'member'.
+--      falls back to the Day 4 default: organization_id = NULL, role = 'partner'.
 --
 -- RLS: admins can CRUD invitations scoped to THEIR OWN organization only.
 --
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.invitations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email           TEXT NOT NULL,
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  role            user_role NOT NULL DEFAULT 'member',
+  role            user_role NOT NULL DEFAULT 'partner',
   invited_by      UUID REFERENCES profiles(id) ON DELETE SET NULL,
   status          invitation_status NOT NULL DEFAULT 'pending',
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -109,7 +109,7 @@ CREATE POLICY invitations_update_admin
 -- ─────────────────────────────────────────
 -- Same contract as Day 4: insert a profile row for the new auth user.
 -- NEW behaviour: if a matching pending invitation exists, use its org_id
--- and role instead of the NULL/'member' defaults, and mark it accepted.
+-- and role instead of the NULL/'partner' defaults, and mark it accepted.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -130,14 +130,14 @@ BEGIN
   LIMIT 1;
 
   -- Create the profile row. If an invitation was found, use its org + role;
-  -- otherwise fall back to NULL org + 'member' (Day 4 default).
+  -- otherwise fall back to NULL org + 'partner' (Day 4 default).
   INSERT INTO public.profiles (id, email, full_name, organization_id, role)
   VALUES (
     NEW.id,
     NEW.email,
     NULLIF(NEW.raw_user_meta_data->>'full_name', ''),
     v_invite.organization_id,                   -- NULL if no invite
-    COALESCE(v_invite.role, 'member'::user_role)
+    COALESCE(v_invite.role, 'partner'::user_role)
   )
   ON CONFLICT (id) DO NOTHING;
 

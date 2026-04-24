@@ -51,3 +51,11 @@ Auto-deploys to Vercel on push to `main`.
 - New sale form with source-purchase picker (only shows purchases with `volume_remaining > 0`).
 - Verified mass balance end-to-end: sold 3t from WOOL-2026-0001, inventory dropped 10 → 7.
 
+### Day 8 — Traceability & role rename
+
+- Added `get_trace_by_sale_code()` security-definer SQL function that returns the full chain-of-custody (landbase → purchase → sale) as JSON for any sale code.
+- New `/trace/[code]` page renders three stacked cards showing landbase, source purchase, and sale, with a "Verified by Land to Market" attestation.
+- Layout shell now renders a minimal navy header on `/trace/*` routes (no admin sidebar), so the provenance viewer feels separate from the internal app.
+- Gated `/trace/*` behind auth for now. Public access will open up once retail partner accounts ship (Day 12+).
+- Renamed `user_role` enum value `member` → `partner` across the database, all TypeScript, UI, and docs. Added `retailer` enum value to reserve it for retail partner accounts.
+

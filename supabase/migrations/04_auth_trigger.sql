@@ -8,7 +8,7 @@
 --
 -- The new profile starts with:
 --   organization_id = NULL  (set by the invite flow on Day 5)
---   role            = 'member'
+--   role            = 'partner'
 --   full_name       = whatever was provided in raw_user_meta_data (or NULL)
 --
 -- SECURITY DEFINER is required because the trigger fires in the auth schema
@@ -36,7 +36,7 @@ BEGIN
     NEW.email,
     NULLIF(NEW.raw_user_meta_data->>'full_name', ''),
     NULL,      -- organization_id is set by the invite flow (Day 5)
-    'member'   -- default role; admins are promoted manually for MVP
+    'partner'   -- default role; admins are promoted manually for MVP
   )
   ON CONFLICT (id) DO NOTHING;
 
@@ -68,7 +68,7 @@ SELECT
   u.email,
   NULLIF(u.raw_user_meta_data->>'full_name', ''),
   NULL,
-  'member'
+  'partner'
 FROM auth.users u
 LEFT JOIN public.profiles p ON p.id = u.id
 WHERE p.id IS NULL;

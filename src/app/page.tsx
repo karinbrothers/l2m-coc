@@ -11,7 +11,7 @@ type ProfileRow = {
   id: string
   email: string | null
   full_name: string | null
-  role: 'admin' | 'member'
+  role: 'admin' | 'partner'
   organization_id: string | null
   organizations: OrgRow | null
 }
@@ -101,7 +101,7 @@ export default async function Home() {
               ) : null}
               <span className="mx-2 text-slate-300">·</span>
               <span className={isAdmin ? 'text-amber-700' : 'text-slate-600'}>
-                {isAdmin ? 'Admin' : 'Member'}
+                {isAdmin ? 'Admin' : 'Partner'}
               </span>
             </>
           ) : (

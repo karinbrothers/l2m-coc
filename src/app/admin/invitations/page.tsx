@@ -14,7 +14,7 @@ type PageProps = {
 type Invitation = {
   id: string
   email: string
-  role: 'admin' | 'member'
+  role: 'admin' | 'partner'
   status: 'pending' | 'accepted' | 'expired' | 'revoked'
   created_at: string
   expires_at: string
@@ -24,7 +24,7 @@ type Invitation = {
 function errorCopy(code: string | undefined): string | null {
   if (!code) return null
   if (code === 'missing_email') return 'Please enter an email address.'
-  if (code === 'invalid_role') return 'Role must be admin or member.'
+  if (code === 'invalid_role') return 'Role must be admin or partner.'
   if (code === 'already_invited')
     return 'This email already has a pending invitation for your organization.'
   if (code === 'missing_id') return 'Invitation id was missing from the request.'
@@ -120,10 +120,10 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
             <select
               id="role"
               name="role"
-              defaultValue="member"
+              defaultValue="partner"
               className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             >
-              <option value="member">Member</option>
+              <option value="partner">Partner</option>
               <option value="admin">Admin</option>
             </select>
           </div>
