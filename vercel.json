@@ -1,0 +1,8 @@
+{
+    "crons": [
+      {
+        "path": "/api/salesforce/sync/cron",
+        "schedule": "0 7 * * *"
+      }
+    ]
+  }
