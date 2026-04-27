@@ -78,3 +78,42 @@ First admin user needed manual org assignment. The profile auto-create trigger p
 SOQL gotcha: the custom object's API name is Land_Base__c (underscore), not Landbase__c. The field API names on it, however, use L2M_Landbase_ with no underscore. Learned the hard way.
 
 Result: end-to-end production pipeline is live. Salesforce → Vercel → Supabase, 1,421 landbases in about three seconds. Nightly cron armed. Admin sign-in working. Next up (Day 10): supply-group scoping so partners only see the landbases relevant to their supply group.
+
+## Day 10 — Supply group scoping
+
+**Goal:** partners log in and see only the landbases linked to their organization's supply groups, while admins keep the full bird's-eye view. Salesforce already models this: an `Account` has `Supply_Group__c` records, each of which is linked to landbases through a `Landbase_Association__c` junction object. The job for Day 10 was to mirror that shape into Postgres and let RLS enforce the visibility.
+
+### Block 1 — schema migration
+
+Added `brand_partner_status`, `supply_chain_partner_status`, `l2m_retailer_status` columns on `organizations` (we'll use them later for filtering and badging). Replaced the placeholder flat `supply_groups` table with a proper entity table (`id`, `salesforce_id`, `name`, `organization_id`) and added a `supply_group_landbases` junction (`supply_group_id`, `landbase_id`, `association_status`, `salesforce_id`). Both new tables get authenticated SELECT under RLS so the landbases policy can join through them; writes are service-role only.
+
+The interesting piece is the rewritten `landbases` SELECT policy: admins see everything, partners see only landbases whose `supply_group_landbases` row points at a supply group whose `organization_id` matches their `profiles.organization_id`. Two `EXISTS` subqueries OR'd together — easy to read, easy to reason about, no recursion.
+
+### Block 2 — extending the Salesforce sync
+
+Day 9's sync only knew about landbases. Day 10 grew it to four passes, run in FK-dependency order: `organizations` → `landbases` → `supply_groups` → `supply_group_landbases`. Each pass uses the same paginated SOQL helper plus the same chunked existence-map pattern (`Map<salesforce_id, local_uuid>`) plus bulk-insert-then-sequential-update — kept it consistent with the landbases pass so there's only one shape to reason about.
+
+The Account filter is the gate that decides which orgs make it into our database in the first place: `Brand_Partner_Status__c = 'Active Brand Partner' OR Supply_Chain_Partner_Status__c IN ('Active Supply Chain Partner', 'Non-Partner Supply Chain Actor') OR L2M_Retailer_Status__c = 'Active Retailer'`. Supply groups whose Account doesn't pass that filter are skipped (logged as `skipped: N` per pass), as are junction rows whose supply group or landbase isn't local. New org rows default to `type='brand'`; existing rows have their name and status fields refreshed but `type` is never overwritten, so the admin org keeps `type='admin'`.
+
+### Block 3 — verifying the RLS works
+
+Created an Atkins Ranch–scoped partner test user (`kbrothers+partner@savory.global`, using RFC 5233 plus-aliasing so the magic link still lands in my real inbox), assigned them `role='partner'` and `organization_id` for Atkins Ranch (99 linked landbases per the SF data). Logged in, opened the dashboard, saw exactly 99 rows. Spot-checked three of them against the SF UI to confirm they were the right ones.
+
+### Wrap — production rollout
+
+Applied migration 08 to the production Supabase project. Hit "Sync now" on production. Result lined up with staging:
+
+| table | staging | production |
+| --- | --- | --- |
+| organizations | 120 | 116 |
+| landbases | 1,426 | 1,421 |
+| supply_groups | 37 | 37 |
+| supply_group_landbases | 1,344 | 1,344 |
+
+Small-but-spicy problems again:
+
+- **`handle_new_user` trigger still inserts `role='member'`**, but the `user_role` enum on production is `{admin, partner, retailer}`. Same fix as Day 9: `ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'member'`. Logged as tech debt — the proper fix is changing the trigger to insert `'partner'` (the new default for invite-based signups), not patching the enum.
+- **`01_schema.sql` no longer matches the live enum state.** It was edited last week to claim `('admin', 'partner')`, but both production and staging have the additional values added incrementally. Flagged for a future schema-snapshot pass; for now the migrations folder is the source of truth, not `01_schema.sql`.
+- **The Sync now button has no UI feedback.** The server action runs, completes, and returns silently — the only confirmation is checking row counts in Supabase or function logs in Vercel. Cost me a confused 10 minutes thinking the button wasn't wired up; it was, the action just doesn't surface a toast. UX nit for later.
+
+Result: partners now see a properly scoped slice of the landbase universe, admin still sees everything, and the supply-group structure in our DB tracks Salesforce 1:1. Day 11 onward we can layer purchases and certificates on top of this scoped view without rebuilding the visibility logic.
