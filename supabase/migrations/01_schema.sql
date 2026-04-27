@@ -11,7 +11,7 @@ CREATE TYPE eligibility_status AS ENUM ('eligible', 'expired', 'suspended');
 CREATE TYPE commodity_type AS ENUM ('wool', 'meat', 'leather', 'dairy', 'olives', 'grapes');
 CREATE TYPE transaction_status AS ENUM ('pending', 'accepted', 'rejected', 'non_l2m');
 CREATE TYPE certificate_type AS ENUM ('origin', 'transaction', 'product_verification');
-CREATE TYPE user_role AS ENUM ('admin', 'member');
+CREATE TYPE user_role AS ENUM ('admin', 'partner');
 
 -- ─────────────────────────────────────────
 -- 2. ORGANIZATIONS
@@ -34,7 +34,7 @@ CREATE TABLE profiles (
   organization_id UUID REFERENCES organizations(id),
   full_name TEXT,
   email TEXT,
-  role user_role DEFAULT 'member',
+  role user_role DEFAULT 'partner',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
