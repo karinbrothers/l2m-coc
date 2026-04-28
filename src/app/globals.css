@@ -128,3 +128,22 @@
     @apply font-sans;
   }
 }
+@media print {
+  @page {
+    margin: 0;
+    size: A4;
+  }
+  body * {
+    visibility: hidden;
+  }
+  [data-cert-print],
+  [data-cert-print] * {
+    visibility: visible;
+  }
+  [data-cert-print] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}

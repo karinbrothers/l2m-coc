@@ -78,29 +78,55 @@ export async function createPurchase(formData: FormData) {
 
   const code = await generateNextPurchaseCode(supabase, user.organization_id)
 
-  const { error: insertErr } = await supabase.from('raw_material_purchases').insert({
-    code,
-    organization_id: user.organization_id,
-    landbase_id: landbaseId,
-    volume,
-    volume_remaining: volume,
-    volume_unit: 'tonnes',
-    commodity_type: 'wool',
-    fibre_diameter: fibreDiameter,
-    year_of_clip: yearOfClip,
-    batch_number: batchNumber,
-    purchase_date: purchaseDate,
-  })
+  // Insert the purchase and ask Postgres to return the new id so we can
+  // chain an origin-certificate insert against it.
+  const { data: newPurchase, error: insertErr } = await supabase
+    .from('raw_material_purchases')
+    .insert({
+      code,
+      organization_id: user.organization_id,
+      landbase_id: landbaseId,
+      volume,
+      volume_remaining: volume,
+      volume_unit: 'tonnes',
+      commodity_type: 'wool',
+      fibre_diameter: fibreDiameter,
+      year_of_clip: yearOfClip,
+      batch_number: batchNumber,
+      purchase_date: purchaseDate,
+    })
+    .select('id, code')
+    .single()
 
-  if (insertErr) {
-    console.error('[createPurchase]', insertErr.message)
-    if (insertErr.code === '23505') {
+  if (insertErr || !newPurchase) {
+    console.error('[createPurchase]', insertErr?.message)
+    if (insertErr?.code === '23505') {
       redirect('/purchases/new?error=code_conflict')
     }
-    redirect(`/purchases/new?error=${encodeURIComponent(insertErr.message)}`)
+    redirect(
+      `/purchases/new?error=${encodeURIComponent(insertErr?.message ?? 'insert_failed')}`,
+    )
+  }
+
+  // Auto-generate the origin certificate for this purchase.
+  // Number format mirrors the purchase code, e.g. WOOL-2026-0001 -> OC-WOOL-2026-0001.
+  // issued_at defaults to now() in the certificates table.
+  const certificateNumber = `OC-${newPurchase.code}`
+  const { error: certErr } = await supabase.from('certificates').insert({
+    certificate_number: certificateNumber,
+    type: 'origin',
+    related_purchase_id: newPurchase.id,
+  })
+
+  if (certErr) {
+    // The purchase already exists; we don't want to fail the whole flow
+    // just because the cert insert tripped. Log and let the user re-issue
+    // the cert later.
+    console.error('[createPurchase] origin cert creation failed:', certErr.message)
   }
 
   revalidatePath('/purchases')
   revalidatePath('/inventory')
+  revalidatePath('/certificates')
   redirect(`/purchases?created=${encodeURIComponent(code)}`)
 }

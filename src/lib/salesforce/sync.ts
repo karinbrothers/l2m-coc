@@ -12,6 +12,7 @@ interface TokenResponse {
 interface SalesforceLandbase {
   Id: string;
   Name: string;
+  Country__c: string | null;
   L2M_Landbase_Eligibility__c: string | null;
   L2M_Landbase_Eligibility_Report_URL__c: string | null;
   L2M_Report_Expiration_Date__c: string | null;
@@ -73,7 +74,6 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> 
   return JSON.parse(text);
 }
 
-// Paginated SOQL — handles nextRecordsUrl when result sets exceed 2000 rows
 async function runSOQLAll<T>(
   instanceUrl: string,
   accessToken: string,
@@ -96,7 +96,6 @@ async function runSOQLAll<T>(
   return out;
 }
 
-// Chunked existence lookup — returns Map<salesforce_id, local_id>
 async function fetchExistingIds(
   supabase: AdminClient,
   table: string,
@@ -158,12 +157,12 @@ async function syncOrganizationsPass(
     };
     const existingId = existingMap.get(a.Id);
     if (existingId) {
-      // Don't overwrite type — admin org needs to keep type='admin'
       toUpdate.push({ id: existingId, data: base });
     } else {
       toInsert.push({ ...base, salesforce_id: a.Id, type: 'brand' });
     }
   }
+
   console.log('[sync] [orgs] insert:', toInsert.length, 'update:', toUpdate.length);
 
   let inserted = 0;
@@ -185,7 +184,7 @@ async function syncOrganizationsPass(
 }
 
 // ============================================================================
-// Pass 2: Salesforce Land_Base__c → landbases  (existing logic, refactored)
+// Pass 2: Salesforce Land_Base__c → landbases
 // ============================================================================
 
 async function syncLandbasesPass(
@@ -193,7 +192,8 @@ async function syncLandbasesPass(
   accessToken: string,
   instanceUrl: string,
 ): Promise<PassResult> {
-  const soql = `SELECT Id, Name, L2M_Landbase_Eligibility__c, L2M_Landbase_Eligibility_Report_URL__c, L2M_Report_Expiration_Date__c, Latest_Verification_Effective_Date__c FROM Land_Base__c`;
+  const soql = `SELECT Id, Name, Country__c, L2M_Landbase_Eligibility__c, L2M_Landbase_Eligibility_Report_URL__c, L2M_Report_Expiration_Date__c, Latest_Verification_Effective_Date__c FROM Land_Base__c`;
+
   console.log('[sync] [landbases] Running SOQL...');
   const records = await runSOQLAll<SalesforceLandbase>(instanceUrl, accessToken, soql);
   console.log('[sync] [landbases] Got', records.length, 'records');
@@ -207,8 +207,9 @@ async function syncLandbasesPass(
     return {
       name: r.Name,
       salesforce_id: r.Id,
+      country: r.Country__c ?? null,
       eligibility_status: eligibility,
-      eligibility_report_id: r.L2M_Landbase_Eligibility_Report_URL__c ?? null,
+      eligibility_report_url: r.L2M_Landbase_Eligibility_Report_URL__c ?? null,
       expiration_date: r.L2M_Report_Expiration_Date__c ?? null,
       verification_date: r.Latest_Verification_Effective_Date__c ?? null,
     };
@@ -219,6 +220,7 @@ async function syncLandbasesPass(
 
   const toInsert = rows.filter((r) => !existingMap.has(r.salesforce_id));
   const toUpdate = rows.filter((r) => existingMap.has(r.salesforce_id));
+
   console.log('[sync] [landbases] insert:', toInsert.length, 'update:', toUpdate.length);
 
   const errors: string[] = [];
@@ -263,7 +265,6 @@ async function syncSupplyGroupsPass(
   const groups = await runSOQLAll<SalesforceSupplyGroup>(instanceUrl, accessToken, soql);
   console.log('[sync] [supply_groups] Got', groups.length, 'records');
 
-  // Resolve SF Account Id → local org id
   const accountSfIds = Array.from(
     new Set(groups.map((g) => g.Account__c).filter((x): x is string => !!x)),
   );
@@ -280,7 +281,6 @@ async function syncSupplyGroupsPass(
   for (const g of groups) {
     const orgId = g.Account__c ? orgMap.get(g.Account__c) : undefined;
     if (!orgId) {
-      // Supply Group's Account didn't pass partner-status filter — skip
       skipped++;
       continue;
     }
@@ -292,6 +292,7 @@ async function syncSupplyGroupsPass(
       toInsert.push({ ...payload, salesforce_id: g.Id });
     }
   }
+
   console.log(
     '[sync] [supply_groups] insert:', toInsert.length,
     'update:', toUpdate.length,
@@ -317,7 +318,7 @@ async function syncSupplyGroupsPass(
 }
 
 // ============================================================================
-// Pass 4: Salesforce Landbase_Association__c → supply_group_landbases junction
+// Pass 4: Salesforce Landbase_Association__c → supply_group_landbases
 // ============================================================================
 
 async function syncSupplyGroupLandbasesPass(
@@ -370,6 +371,7 @@ async function syncSupplyGroupLandbasesPass(
       toInsert.push({ ...payload, salesforce_id: a.Id });
     }
   }
+
   console.log(
     '[sync] [junction] insert:', toInsert.length,
     'update:', toUpdate.length,
@@ -397,26 +399,23 @@ async function syncSupplyGroupLandbasesPass(
 }
 
 // ============================================================================
-// Orchestrator: refresh token once, run all 4 passes in dependency order
+// Orchestrator
 // ============================================================================
 
 export async function syncSalesforceLandbases(organizationId: string) {
   console.log('[sync] START for org:', organizationId);
   const supabase = createAdminClient();
 
-  // 1. Load credentials
   const { data: creds, error: credsErr } = await supabase
     .from('salesforce_credentials')
     .select('*')
     .eq('organization_id', organizationId)
     .single();
-
   if (credsErr || !creds) {
     throw new Error(`No Salesforce credentials: ${credsErr?.message ?? 'not found'}`);
   }
   console.log('[sync] Loaded creds, instance:', creds.instance_url);
 
-  // 2. Refresh access token (once for all four passes)
   let accessToken: string;
   let instanceUrl: string;
   try {
@@ -435,11 +434,6 @@ export async function syncSalesforceLandbases(organizationId: string) {
     throw new Error(`Token refresh: ${msg}`);
   }
 
-  // 3. Run all 4 passes in dependency order:
-  //      orgs (parent of supply_groups)
-  //   -> landbases (parent of junction)
-  //   -> supply_groups (parent of junction)
-  //   -> junction (depends on both)
   const allErrors: string[] = [];
   let orgsResult: PassResult | undefined;
   let landbasesResult: PassResult | undefined;
@@ -469,7 +463,6 @@ export async function syncSalesforceLandbases(organizationId: string) {
     throw e;
   }
 
-  // 4. Write final status
   await supabase.from('salesforce_credentials').update({
     last_sync_at: new Date().toISOString(),
     last_sync_status: allErrors.length > 0 ? 'partial' : 'ok',
@@ -485,8 +478,6 @@ export async function syncSalesforceLandbases(organizationId: string) {
     errors: allErrors.length,
   }));
 
-  // Return shape preserves the original landbases-only fields for backward compat
-  // with whatever your /api/sync route renders, and adds the new pass results.
   return {
     totalFromSalesforce: landbasesResult.total,
     inserted: landbasesResult.inserted,
