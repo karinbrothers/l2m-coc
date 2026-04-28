@@ -4,8 +4,9 @@ import type { ReactNode } from 'react';
 type CertificateChromeProps = {
   title: string;
   subtitle?: string;
-  certificateNumber: string;
+  certificateNumber: string | null;
   issuedAt: Date | string | null;
+  description?: string;
   showSeal?: boolean;
   children: ReactNode;
 };
@@ -15,6 +16,7 @@ export function CertificateChrome({
   subtitle,
   certificateNumber,
   issuedAt,
+  description,
   showSeal = true,
   children,
 }: CertificateChromeProps) {
@@ -48,7 +50,9 @@ export function CertificateChrome({
           <div className="text-[10px] uppercase tracking-[0.18em] opacity-80">
             Certificate No.
           </div>
-          <div className="text-base font-mono mt-0.5">{certificateNumber}</div>
+          <div className="text-base font-mono mt-0.5">
+            {certificateNumber ?? '—'}
+          </div>
           {issuedAt && (
             <div className="text-xs opacity-70 mt-1">
               Issued {formatDate(issuedAt)}
@@ -57,7 +61,14 @@ export function CertificateChrome({
         </div>
       </header>
 
-      <main className="px-10 py-8 text-slate-800">{children}</main>
+      <main className="px-10 py-8 text-slate-800">
+        {description && (
+          <p className="text-xs text-slate-500 italic mb-6 leading-relaxed">
+            {description}
+          </p>
+        )}
+        {children}
+      </main>
 
       <footer className="border-t border-slate-200 px-10 py-6 flex items-center justify-between gap-8">
         <div className="text-[11px] text-slate-500 max-w-lg leading-relaxed">
