@@ -157,7 +157,6 @@ export async function createSale(formData: FormData) {
       certificate_number: tcNumber,
       type: 'transaction',
       related_transaction_id: sale.id,
-      issued_by: user.id,
       // Snapshot fields
       sale_code: sale.code,
       buyer_name_snapshot: sale.buyer_name,
