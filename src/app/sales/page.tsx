@@ -16,6 +16,8 @@ type PurchaseLite = {
 
 type OrgLite = { id: string; name: string }
 
+type CertLite = { id: string; type: string }
+
 type SaleRow = {
   id: string
   code: string
@@ -29,6 +31,7 @@ type SaleRow = {
   created_at: string
   raw_material_purchases: PurchaseLite | null
   organizations: OrgLite | null
+  certificates: CertLite[] | null
 }
 
 function fmtNumber(n: number, digits = 2): string {
@@ -62,7 +65,8 @@ export default async function SalesPage({ searchParams }: PageProps) {
         id, code,
         landbases:landbase_id ( id, name, country )
       ),
-      organizations:organization_id ( id, name )
+      organizations:organization_id ( id, name ),
+      certificates!related_transaction_id ( id, type )
       `,
     )
     .order('sale_date', { ascending: false, nullsFirst: false })
@@ -141,38 +145,54 @@ export default async function SalesPage({ searchParams }: PageProps) {
                 ) : null}
                 <th className="px-6 py-2 font-medium">Sold</th>
                 <th className="px-6 py-2 font-medium text-right">Volume</th>
+                <th className="px-6 py-2 font-medium">Certificate</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sales.map((s) => (
-                <tr key={s.id}>
-                  <td className="px-6 py-3 font-mono text-xs text-slate-900">
-                    {s.code}
-                  </td>
-                  <td className="px-6 py-3 text-slate-800">{s.buyer_name}</td>
-                  <td className="px-6 py-3 text-slate-700">
-                    <div className="font-mono text-xs">
-                      {s.raw_material_purchases?.code ?? '—'}
-                    </div>
-                    {s.raw_material_purchases?.landbases?.name ? (
-                      <div className="text-xs text-slate-500">
-                        {s.raw_material_purchases.landbases.name}
-                      </div>
-                    ) : null}
-                  </td>
-                  {isAdmin ? (
-                    <td className="px-6 py-3 text-slate-700">
-                      {s.organizations?.name ?? '—'}
+              {sales.map((s) => {
+                const tc = s.certificates?.find((c) => c.type === 'transaction')
+                return (
+                  <tr key={s.id}>
+                    <td className="px-6 py-3 font-mono text-xs text-slate-900">
+                      {s.code}
                     </td>
-                  ) : null}
-                  <td className="px-6 py-3 text-slate-500">
-                    {fmtDate(s.sale_date)}
-                  </td>
-                  <td className="px-6 py-3 text-right text-slate-900">
-                    {fmtNumber(Number(s.volume))} {s.volume_unit}
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-6 py-3 text-slate-800">{s.buyer_name}</td>
+                    <td className="px-6 py-3 text-slate-700">
+                      <div className="font-mono text-xs">
+                        {s.raw_material_purchases?.code ?? '—'}
+                      </div>
+                      {s.raw_material_purchases?.landbases?.name ? (
+                        <div className="text-xs text-slate-500">
+                          {s.raw_material_purchases.landbases.name}
+                        </div>
+                      ) : null}
+                    </td>
+                    {isAdmin ? (
+                      <td className="px-6 py-3 text-slate-700">
+                        {s.organizations?.name ?? '—'}
+                      </td>
+                    ) : null}
+                    <td className="px-6 py-3 text-slate-500">
+                      {fmtDate(s.sale_date)}
+                    </td>
+                    <td className="px-6 py-3 text-right text-slate-900">
+                      {fmtNumber(Number(s.volume))} {s.volume_unit}
+                    </td>
+                    <td className="px-6 py-3">
+                      {tc ? (
+                        <Link
+                          href={`/certificates/${tc.id}`}
+                          className="text-sm font-medium text-[#063359] hover:underline"
+                        >
+                          View certificate
+                        </Link>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
