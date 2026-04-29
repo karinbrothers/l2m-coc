@@ -63,9 +63,13 @@ export async function createPurchase(formData: FormData) {
     redirect('/purchases/new?error=invalid_year')
   }
 
+  // Pull every landbase field that ends up snapshotted onto the cert,
+  // so we only hit the DB once for both validation and snapshot capture.
   const { data: lb, error: lbErr } = await supabase
     .from('landbases')
-    .select('id, eligibility_status')
+    .select(
+      'id, name, country, eligibility_status, expiration_date, monitoring_date, verification_date, eligibility_report_url',
+    )
     .eq('id', landbaseId)
     .single()
 
@@ -108,20 +112,33 @@ export async function createPurchase(formData: FormData) {
     )
   }
 
-  // Auto-generate the origin certificate for this purchase.
-  // Number format mirrors the purchase code, e.g. WOOL-2026-0001 -> OC-WOOL-2026-0001.
-  // issued_at defaults to now() in the certificates table.
+  // Auto-generate the origin certificate for this purchase, with a full
+  // snapshot of the landbase + purchase fields so the cert remains a faithful
+  // record even if the underlying rows change later.
   const certificateNumber = `OC-${newPurchase.code}`
   const { error: certErr } = await supabase.from('certificates').insert({
     certificate_number: certificateNumber,
     type: 'origin',
     related_purchase_id: newPurchase.id,
+    landbase_id: lb.id,
+    landbase_name_snapshot: lb.name,
+    country_snapshot: lb.country,
+    eligibility_status_snapshot: lb.eligibility_status,
+    expiration_date_snapshot: lb.expiration_date,
+    monitoring_date_snapshot: lb.monitoring_date,
+    verification_date_snapshot: lb.verification_date,
+    eligibility_report_url_snapshot: lb.eligibility_report_url,
+    purchase_code: newPurchase.code,
+    volume,
+    volume_unit: 'tonnes',
+    commodity_type: 'wool',
+    purchase_date: purchaseDate,
+    clip_year_snapshot: yearOfClip,
+    report_year_used: new Date().getFullYear(),
   })
 
   if (certErr) {
-    // The purchase already exists; we don't want to fail the whole flow
-    // just because the cert insert tripped. Log and let the user re-issue
-    // the cert later.
+    // Don't block the purchase flow — log and let the user re-issue later.
     console.error('[createPurchase] origin cert creation failed:', certErr.message)
   }
 
