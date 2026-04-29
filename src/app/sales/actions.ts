@@ -41,32 +41,39 @@ export async function generateNextSaleCode(): Promise<string> {
 
 /**
  * Record a sale, decrement source purchase volume, and auto-issue a
- * Transaction Certificate that links back to the origin certificate(s)
- * of the source purchase.
+ * Transaction Certificate that links back to the origin certificate of
+ * the source purchase.
+ *
+ * Validation errors redirect back to /sales/new with ?error=<code>
+ * so the form can render a friendly message.
  */
 export async function createSale(formData: FormData) {
   const user = await requireUser()
   const supabase = await createClient()
 
-  // ---- 1. Validate form input ---------------------------------------------
-  const code = String(formData.get('code') ?? '').trim()
-  const sourcePurchaseId = String(formData.get('source_purchase_id') ?? '').trim()
+  // ---- 1. Validate form input --------------------------------------------
+  const sourcePurchaseId = String(
+    formData.get('source_purchase_id') ?? '',
+  ).trim()
   const buyerName = String(formData.get('buyer_name') ?? '').trim()
   const volumeRaw = String(formData.get('volume') ?? '').trim()
-  const saleDate = String(formData.get('sale_date') ?? '').trim()
+  const saleDate =
+    String(formData.get('sale_date') ?? '').trim() ||
+    new Date().toISOString().slice(0, 10)
   const notes = String(formData.get('notes') ?? '').trim() || null
 
-  if (!code) throw new Error('Sale code is required')
-  if (!sourcePurchaseId) throw new Error('Source purchase is required')
-  if (!buyerName) throw new Error('Buyer name is required')
-  if (!saleDate) throw new Error('Sale date is required')
+  if (!sourcePurchaseId) redirect('/sales/new?error=missing_source')
+  if (!buyerName) redirect('/sales/new?error=missing_buyer')
 
   const volume = Number(volumeRaw)
   if (!Number.isFinite(volume) || volume <= 0) {
-    throw new Error('Volume must be a positive number')
+    redirect('/sales/new?error=invalid_volume')
   }
 
-  // ---- 2. Record the sale via SECURITY DEFINER RPC ------------------------
+  // ---- 2. Generate sale code internally ----------------------------------
+  const code = await generateNextSaleCode()
+
+  // ---- 3. Record the sale via SECURITY DEFINER RPC -----------------------
   const { data: rpcData, error: rpcErr } = await supabase.rpc('record_sale', {
     p_code: code,
     p_source_purchase_id: sourcePurchaseId,
@@ -79,15 +86,15 @@ export async function createSale(formData: FormData) {
   if (rpcErr) {
     console.error('[createSale] record_sale error:', rpcErr)
     if (rpcErr.message?.includes('insufficient_volume')) {
-      throw new Error('Not enough volume remaining on source purchase')
+      redirect('/sales/new?error=insufficient_volume')
     }
     if (rpcErr.message?.includes('source_not_found')) {
-      throw new Error('Source purchase not found')
+      redirect('/sales/new?error=source_not_found')
     }
     if (rpcErr.message?.includes('no_organization')) {
-      throw new Error('You are not a member of an organization')
+      redirect('/sales/new?error=no_organization')
     }
-    throw new Error('Could not record sale')
+    redirect('/sales/new?error=unknown')
   }
 
   const sale = rpcData as {
@@ -106,8 +113,9 @@ export async function createSale(formData: FormData) {
     redirect('/sales')
   }
 
-  // ---- 3. Auto-issue Transaction Certificate ------------------------------
+  // ---- 4. Auto-issue Transaction Certificate -----------------------------
   // Look up snapshot data IN PARALLEL: source purchase, seller org, origin cert
+  // Direct OC query avoids PostgREST nested-select FK disambiguation bugs.
   const [purchaseRes, orgRes, originCertRes] = await Promise.all([
     supabase
       .from('raw_material_purchases')
@@ -119,7 +127,6 @@ export async function createSale(formData: FormData) {
       .select('name')
       .eq('id', sale.organization_id)
       .maybeSingle(),
-    // Direct OC lookup — avoids PostgREST nested-select FK disambiguation bugs
     supabase
       .from('certificates')
       .select('id, certificate_number')
@@ -142,7 +149,6 @@ export async function createSale(formData: FormData) {
     console.error('[createSale] origin cert lookup error:', originCertRes.error)
   }
 
-  // Build TC certificate number: TC-<sale code>
   const tcNumber = `TC-${sale.code}`
 
   const { data: tcData, error: tcErr } = await supabase
@@ -169,7 +175,7 @@ export async function createSale(formData: FormData) {
     console.error('[createSale] TC insert error:', tcErr)
     // Don't block the sale on TC failure — log and continue
   } else if (tcData && originCert) {
-    // ---- 4. Link TC -> OC ------------------------------------------------
+    // ---- 5. Link TC -> OC -----------------------------------------------
     const { error: linkErr } = await supabase
       .from('certificate_origin_links')
       .insert({
@@ -183,11 +189,11 @@ export async function createSale(formData: FormData) {
     }
   } else if (tcData && !originCert) {
     console.warn(
-      `[createSale] TC ${tcNumber} created but no origin cert found for purchase ${sale.source_purchase_id}`
+      `[createSale] TC ${tcNumber} created but no origin cert found for purchase ${sale.source_purchase_id}`,
     )
   }
 
-  // ---- 5. Done ------------------------------------------------------------
+  // ---- 6. Done -----------------------------------------------------------
   revalidatePath('/sales')
   revalidatePath('/certificates')
   redirect('/sales')
