@@ -48,7 +48,7 @@ export async function generateNextSaleCode(): Promise<string> {
  * so the form can render a friendly message.
  */
 export async function createSale(formData: FormData) {
-  const user = await requireUser()
+  await requireUser()
   const supabase = await createClient()
 
   // ---- 1. Validate form input --------------------------------------------
@@ -157,6 +157,11 @@ export async function createSale(formData: FormData) {
       certificate_number: tcNumber,
       type: 'transaction',
       related_transaction_id: sale.id,
+      // Mirror columns the UI reads from
+      volume: sale.volume,
+      volume_unit: 'tonnes',
+      commodity_type: purchase?.commodity_type ?? null,
+      purchase_code: purchase?.code ?? null,
       // Snapshot fields
       sale_code: sale.code,
       buyer_name_snapshot: sale.buyer_name,
