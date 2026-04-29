@@ -135,3 +135,62 @@ Sign out was missing from the sidebar. Switching between admin and partner accou
 Country missing from landbases. Country__c was never being pulled into Supabase from Salesforce — every landbase was syncing without a country. Added the field to the SOQL select, the SFLandbase type, and the row payload. Same pass also fixed a quietly-broken mapping where the eligibility report URL was being written to the eligibility_report_id column instead of eligibility_report_url. Re-running the sync repopulated country on every landbase that has it set in Salesforce, and put the URLs in the right column so "View certificate" buttons started appearing on rows that had previously shown —.
 
 Result: production has end-to-end origin certificates working. Every wool purchase auto-issues a verified, immutable cert with a faithful snapshot of the landbase and purchase at issue time. The "View certificate" column on /purchases links straight into the cert page. Next up (Day 12): the equivalent flow for transactions — wire record_sale to issue a Transaction Certificate that references the underlying origin certs, so the chain-of-custody trace finally ties end to end.
+
+
+### Day 12 — Auto-issued transaction certificates with origin lineage
+
+**Goal:** Every sale auto-issues a Transaction Certificate (TC) that
+links back to the origin certificate(s) of its source purchase, completing
+the chain-of-custody trace.
+
+**Schema migrations:**
+- `10b_sales_workflow.sql` (prod catch-up — staging had `sales` table from Day 7
+  Studio work that never made it into a migration; prod was still on the legacy
+  `sale_transactions` table).
+- `11_transaction_certificates.sql` — TC snapshot columns (`sale_code`,
+  `buyer_name_snapshot`, `seller_org_name_snapshot`, `sale_date_snapshot`),
+  new `certificate_origin_links` table with RLS, FK repair on
+  `certificates.related_transaction_id → sales(id)`, and a backfill block
+  for existing TCs.
+- `12_certificate_more_snapshots.sql` — added `commodity_type_snapshot`,
+  `volume_snapshot`, `volume_unit_snapshot`, `source_purchase_code_snapshot`
+  to `certificates` (forgotten in 11).
+- `13_origin_links_insert_policy.sql` — INSERT policy on
+  `certificate_origin_links` (only a SELECT policy existed, so all inserts
+  were 42501-blocked even for admins).
+
+**Code changes:**
+- `src/app/sales/actions.ts` — `createSale` now generates the sale code
+  internally, calls `record_sale`, then in parallel looks up the source
+  purchase, seller org, and origin certificate via direct queries (not
+  PostgREST nested selects, which silently lose the origin cert due to FK
+  disambiguation). Inserts the TC with both mirror columns
+  (`volume`, `commodity_type`, `purchase_code`, `volume_unit`) the UI reads
+  from and `*_snapshot` columns for chain-of-custody. Then inserts the
+  TC→OC link. Validation errors redirect with `?error=<code>` so the form
+  can render friendly messages.
+- `src/components/certificates/TransactionCertificate.tsx` — rewritten to
+  display TC fields and source-material lineage.
+- `src/app/sales/page.tsx` — added "View certificate" column.
+- `src/app/certificates/[id]/page.tsx` — type-dispatching renderer (origin
+  vs transaction).
+
+**Bugs hit and resolved:**
+- Schema drift: prod still on legacy `sale_transactions` while staging
+  had `sales` (resolved with catch-up migration 10b).
+- Profiles RLS qualifier: `where user_id = auth.uid()` corrected to
+  `where id = auth.uid()` — profiles uses `id` as the FK to `auth.users`.
+- `issued_by` column referenced in earlier code drafts but doesn't exist
+  on `certificates` — removed.
+- PostgREST nested-select FK disambiguation silently dropped origin cert
+  on production; replaced with a direct `eq('related_purchase_id', ...)
+  .eq('type', 'origin')` query.
+- Missing INSERT policy on `certificate_origin_links` blocked link inserts
+  with `42501` even for admins — fixed in migration 13.
+
+**Open / deferred to Day 13:**
+- Duplicate `WOOL-2026-0001` purchase code across two orgs on staging
+  (Purchase B left dormant — needs a real fix).
+- Processing step: partners should not be able to sell directly from raw
+  purchases. Need an unprocessed → processed inventory split (sales draw
+  from processed only).
