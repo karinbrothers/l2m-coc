@@ -194,3 +194,67 @@ the chain-of-custody trace.
 - Processing step: partners should not be able to sell directly from raw
   purchases. Need an unprocessed → processed inventory split (sales draw
   from processed only).
+
+
+  ### Day 13 — Processing workflow (raw → processed → sale)
+
+**Goal:** Partners can no longer sell directly from raw purchases. New flow:
+raw purchase → processing batch (with yield loss) → inventory lot → sale.
+Transaction certificates trace back through the batch chain to ALL
+contributing origin certificates with proportional volume attribution.
+
+**Schema migration:**
+- `14_processing_workflow.sql`:
+  - Clean slate: deleted 4 test sales + their TCs + origin links
+  - Reset `raw_material_purchases.volume_remaining = volume`
+  - Switched `sales.source_purchase_id → sales.inventory_lot_id`
+  - `record_processing_batch` RPC — atomic: validates each input has
+    enough remaining, decrements raw `volume_remaining`, inserts the
+    batch + `processing_batch_inputs` rows + the resulting `inventory_lot`
+  - Updated `record_sale` RPC to draw from `inventory_lots`
+  - Day-1 schema already had `processing_batches`,
+    `processing_batch_inputs`, `inventory_lots` tables with RLS — Day 13
+    just wired them up
+
+**Code changes:**
+- `src/app/processing/actions.ts` (new) — `generateNextLotCode`,
+  `createProcessingBatch`
+- `src/app/processing/page.tsx` (new) — list view with summary cards
+  (batches, volume processed, yield %)
+- `src/app/processing/new/page.tsx` (new) — multi-input form: each raw
+  purchase shows as a row with a per-row volume input, plus output
+  product/volume/method/date/subcontractors
+- `src/app/sales/actions.ts` — `createSale` now walks
+  `inventory_lot → processing_batch → batch_inputs → raw_purchases →
+  origin certificates`, attributes volume proportionally to each linked OC
+- `src/app/sales/new/page.tsx` — source dropdown shows inventory lots
+  instead of raw purchases
+- `src/app/sales/page.tsx` — "From" column shows lot code + product name
+- `src/app/inventory/page.tsx` — two sections: Unprocessed raw + Processed
+  lots, with summary totals
+- `src/app/layout.tsx` — added Processing nav entry; reordered so the
+  flow reads Landbases → Purchases → Inventory → Processing → Sales →
+  Certificates
+
+**Volume attribution math:**
+For each input source in the batch, the TC links to that source's origin
+cert with `volume_attributed = (input_volume_used / batch_input_total) ×
+sale_volume`. So a batch built from 3t of Purchase A and 2t of Purchase B
+(input_total = 5t), used to sell 2t to a customer, results in:
+- TC → OC-A linked with 1.2t attributed
+- TC → OC-B linked with 0.8t attributed
+
+**Bug hit during migration:** Postgres won't let `CREATE OR REPLACE
+FUNCTION` change parameter names. Solved by `DROP FUNCTION IF EXISTS
+record_sale(text, uuid, text, numeric, date, text)` before the new
+`CREATE`.
+
+**Open / deferred:**
+- Inventory lots can technically serve as input to further processing
+  (`source_type = 'inventory_lot'` supported in `processing_batch_inputs`),
+  but the UI only exposes raw purchases as inputs.
+- `record_processing_batch` doesn't enforce that batch inputs are the
+  same commodity type — partner is responsible for not mixing wool and
+  cotton in one batch.
+- Duplicate `WOOL-2026-0001` purchase code across two orgs on staging
+  (still dormant from Day 12) — needs a real fix.
