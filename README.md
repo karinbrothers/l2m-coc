@@ -258,3 +258,55 @@ record_sale(text, uuid, text, numeric, date, text)` before the new
   cotton in one batch.
 - Duplicate `WOOL-2026-0001` purchase code across two orgs on staging
   (still dormant from Day 12) — needs a real fix.
+
+
+  ### Day 14 — Chain-of-custody storytelling: trace + TC display
+
+**Goal:** Bring the customer-facing provenance views into line with the
+new processing chain. The `/trace/[code]` page and Transaction
+Certificate display had been written for the old direct raw→sale model
+and silently rendered missing fields after Day 13's schema change.
+
+**Schema migration:**
+- `15_trace_function_v2.sql` — rewrote `get_trace_by_sale_code(text)` to
+  walk the new chain: `sale → inventory_lot → processing_batch →
+  processing_batch_inputs → raw_purchases → landbase + origin certificate`.
+  Returns a richer JSON with:
+  - `sale` (code, buyer, volume, date)
+  - `lot` (code, product name, total/remaining volume)
+  - `batch` (input total, output volume, output product, method,
+    subcontractors, processing date, yield %)
+  - `inputs[]` — one entry per raw-purchase input, each with the raw
+    purchase metadata, landbase + eligibility, origin certificate, and
+    a proportional `volume_attributed` calculated as
+    `(volume_used / batch_input_total) × sale_volume`
+  - `organization` (seller name)
+
+**Code changes:**
+- `src/app/trace/[code]/page.tsx` — full redesign with a 4-step layout
+  (Sale → Inventory Lot → Processing → Source landbases). Each source
+  landbase renders as its own card with eligibility badge, raw-purchase
+  metadata (year of clip, fibre diameter, batch number), per-input
+  volume attribution, and a link to the origin certificate. Verification
+  banner reflects whether *all* sources are eligible.
+- `src/app/certificates/[id]/page.tsx` — extended the supabase select
+  to nested-fetch the sale's inventory lot and processing batch alongside
+  the existing origin links.
+- `src/components/certificates/TransactionCertificate.tsx` — added a
+  Processing section (output product, lot code, processing date, method,
+  input/output volumes, yield, subcontractors) and a "View full
+  provenance trace" link at the bottom that deep-links to
+  `/trace/[sale_code]`. New `ProcessingBatchLite` and extended
+  `TransactionCertificateData` types are backwards-compatible so older
+  TCs without the chain still render cleanly.
+
+**Open / deferred:**
+- PDF generation for transaction certs (origin certs got it on Day 11).
+- Partner-role experience hasn't been tested end-to-end as a non-admin
+  user.
+- Buyer-side acceptance flow (sale_transactions has `status`,
+  `accepted_at`, `response_deadline` columns from Day 1 that aren't
+  wired up).
+- Inventory lots as input to further processing (schema supports it via
+  `processing_batch_inputs.source_type = 'inventory_lot'`, UI doesn't
+  expose it).
