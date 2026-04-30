@@ -28,6 +28,21 @@ export default async function CertificateDetailPage({
           landbase_name_snapshot,
           country_snapshot
         )
+      ),
+      sale:sales!related_transaction_id (
+        code,
+        inventory_lot:inventory_lot_id (
+          code,
+          product_name,
+          processing_batch:processing_batch_id (
+            input_total_volume,
+            output_volume,
+            output_product,
+            processing_method,
+            processing_date,
+            subcontractors
+          )
+        )
       )
       `,
     )

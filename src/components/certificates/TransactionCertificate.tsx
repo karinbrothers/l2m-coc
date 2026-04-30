@@ -17,6 +17,15 @@ export type OriginLinkLite = {
   } | null;
 };
 
+export type ProcessingBatchLite = {
+  input_total_volume: number | null;
+  output_volume: number | null;
+  output_product: string | null;
+  processing_method: string | null;
+  processing_date: string | null;
+  subcontractors: string | null;
+};
+
 export type TransactionCertificateData = {
   id: string;
   certificate_number: string | null;
@@ -30,6 +39,14 @@ export type TransactionCertificateData = {
   commodity_type: string | null;
   purchase_code: string | null;
   certificate_origin_links: OriginLinkLite[] | null;
+  sale: {
+    code: string | null;
+    inventory_lot: {
+      code: string | null;
+      product_name: string | null;
+      processing_batch: ProcessingBatchLite | null;
+    } | null;
+  } | null;
 };
 
 function formatDate(d: string | null) {
@@ -46,12 +63,20 @@ function formatVolume(v: number | null, unit: string | null) {
   return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
 }
 
+function yieldPct(input: number | null, output: number | null): string {
+  if (input == null || output == null || Number(input) <= 0) return '—';
+  return `${Math.round((Number(output) / Number(input)) * 100)}%`;
+}
+
 export function TransactionCertificate({
   certificate,
 }: {
   certificate: TransactionCertificateData;
 }) {
   const links = certificate.certificate_origin_links ?? [];
+  const lot = certificate.sale?.inventory_lot ?? null;
+  const batch = lot?.processing_batch ?? null;
+  const traceCode = certificate.sale?.code ?? certificate.sale_code;
 
   return (
     <CertificateChrome
@@ -83,6 +108,35 @@ export function TransactionCertificate({
           {certificate.buyer_name_snapshot ?? '—'}
         </CertificateField>
       </CertificateSection>
+
+      {batch ? (
+        <CertificateSection title="Processing">
+          <CertificateField label="Output product">
+            {batch.output_product ?? lot?.product_name ?? '—'}
+          </CertificateField>
+          <CertificateField label="Lot code">
+            {lot?.code ?? '—'}
+          </CertificateField>
+          <CertificateField label="Processed">
+            {formatDate(batch.processing_date)}
+          </CertificateField>
+          <CertificateField label="Method">
+            {batch.processing_method ?? '—'}
+          </CertificateField>
+          <CertificateField label="Input volume">
+            {formatVolume(batch.input_total_volume, certificate.volume_unit)}
+          </CertificateField>
+          <CertificateField label="Output volume">
+            {formatVolume(batch.output_volume, certificate.volume_unit)}
+          </CertificateField>
+          <CertificateField label="Yield">
+            {yieldPct(batch.input_total_volume, batch.output_volume)}
+          </CertificateField>
+          <CertificateField label="Processed by">
+            {batch.subcontractors ?? '—'}
+          </CertificateField>
+        </CertificateSection>
+      ) : null}
 
       <CertificateSection title="Source materials">
         <div className="col-span-2 space-y-2">
@@ -125,6 +179,29 @@ export function TransactionCertificate({
           )}
         </div>
       </CertificateSection>
+
+      {traceCode ? (
+        <div className="col-span-2 mt-2 border-t border-slate-100 pt-4">
+          <Link
+            href={`/trace/${traceCode}`}
+            className="inline-flex items-center gap-2 text-sm font-medium hover:underline"
+            style={{ color: '#063359' }}
+          >
+            View full provenance trace
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </Link>
+        </div>
+      ) : null}
     </CertificateChrome>
   );
 }
