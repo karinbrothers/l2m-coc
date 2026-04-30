@@ -7,25 +7,23 @@ type PageProps = {
   searchParams: Promise<{ error?: string }>
 }
 
-type LandbaseLite = { id: string; name: string; country: string | null }
-
-type AvailablePurchase = {
+type AvailableLot = {
   id: string
   code: string
+  product_name: string
   volume_remaining: number
   volume_unit: string
-  landbases: LandbaseLite | null
 }
 
 function errorCopy(code: string | undefined): string | null {
   if (!code) return null
-  if (code === 'missing_source') return 'Please choose a source purchase.'
+  if (code === 'missing_source') return 'Please choose an inventory lot.'
   if (code === 'missing_buyer') return 'Please enter a buyer name.'
   if (code === 'invalid_volume') return 'Volume must be a positive number.'
   if (code === 'insufficient_volume')
-    return 'Not enough remaining volume on that source purchase. Try a smaller amount or pick another source.'
-  if (code === 'source_not_found')
-    return 'That source purchase is not available to your organization.'
+    return 'Not enough remaining volume on that inventory lot. Try a smaller amount or pick another lot.'
+  if (code === 'lot_not_found')
+    return 'That inventory lot is not available to your organization.'
   if (code === 'no_organization')
     return 'Your account is not part of an organization.'
   return `Error: ${code}`
@@ -36,16 +34,14 @@ export default async function NewSalePage({ searchParams }: PageProps) {
   const { error } = await searchParams
   const supabase = await createClient()
 
-  const { data: purchases } = await supabase
-    .from('raw_material_purchases')
-    .select(
-      'id, code, volume_remaining, volume_unit, landbases:landbase_id ( id, name, country )',
-    )
+  const { data: lots } = await supabase
+    .from('inventory_lots')
+    .select('id, code, product_name, volume_remaining, volume_unit')
     .gt('volume_remaining', 0)
     .order('code', { ascending: true })
-    .returns<AvailablePurchase[]>()
+    .returns<AvailableLot[]>()
 
-  const options = purchases ?? []
+  const options = lots ?? []
   const todayIso = new Date().toISOString().slice(0, 10)
 
   return (
@@ -58,8 +54,8 @@ export default async function NewSalePage({ searchParams }: PageProps) {
         </div>
         <h2 className="mt-2 text-2xl font-semibold text-slate-900">New sale</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Record a sale drawn from an existing raw material purchase. The
-          purchase&apos;s remaining volume is decremented atomically.
+          Record a sale drawn from a processed inventory lot. The lot&apos;s
+          remaining volume is decremented atomically.
         </p>
       </div>
 
@@ -71,7 +67,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
 
       {options.length === 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No raw purchases with remaining volume. Record a purchase first.
+          No inventory lots with remaining volume. Process a raw purchase first.
         </div>
       ) : (
         <form
@@ -80,25 +76,25 @@ export default async function NewSalePage({ searchParams }: PageProps) {
         >
           <div>
             <label
-              htmlFor="source_purchase_id"
+              htmlFor="inventory_lot_id"
               className="mb-1 block text-sm font-medium text-slate-700"
             >
-              Source purchase <span className="text-red-600">*</span>
+              Inventory lot <span className="text-red-600">*</span>
             </label>
             <select
-              id="source_purchase_id"
-              name="source_purchase_id"
+              id="inventory_lot_id"
+              name="inventory_lot_id"
               required
               defaultValue=""
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             >
               <option value="" disabled>
-                Select a purchase with remaining volume…
+                Select a lot with remaining volume…
               </option>
-              {options.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} — {p.landbases?.name ?? 'Unknown landbase'} —{' '}
-                  {Number(p.volume_remaining)} {p.volume_unit} remaining
+              {options.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.code} — {l.product_name} — {Number(l.volume_remaining)}{' '}
+                  {l.volume_unit} remaining
                 </option>
               ))}
             </select>

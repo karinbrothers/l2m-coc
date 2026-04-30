@@ -1,195 +1,162 @@
-import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 
-type LandbaseLite = {
-  id: string
-  name: string
-  country: string | null
-}
-
-type OrgLite = {
-  id: string
-  name: string
-}
-
-type RawRow = {
+type RawPurchase = {
   id: string
   code: string
-  volume: number
   volume_remaining: number
   volume_unit: string
-  fibre_diameter: number | null
-  year_of_clip: number | null
-  purchase_date: string | null
-  landbases: LandbaseLite | null
-  organizations: OrgLite | null
+  commodity_type: string
+  purchase_date: string
+  landbases: { name: string } | null
 }
 
-function fmtNumber(n: number, digits = 2): string {
-  return n.toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  })
+type Lot = {
+  id: string
+  code: string
+  product_name: string
+  volume_remaining: number
+  total_volume: number
+  volume_unit: string
+  processing_batches: { processing_date: string } | null
 }
 
 export default async function InventoryPage() {
-  const user = await requireUser()
+  await requireUser()
   const supabase = await createClient()
 
-  const { data: rawRows, error: rawErr } = await supabase
-    .from('raw_material_purchases')
-    .select(
-      `
-      id, code, volume, volume_remaining, volume_unit,
-      fibre_diameter, year_of_clip, purchase_date,
-      landbases:landbase_id ( id, name, country ),
-      organizations:organization_id ( id, name )
-      `,
-    )
-    .gt('volume_remaining', 0)
-    .order('purchase_date', { ascending: false, nullsFirst: false })
-    .returns<RawRow[]>()
+  const [rawRes, lotsRes] = await Promise.all([
+    supabase
+      .from('raw_material_purchases')
+      .select(
+        'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, landbases:landbase_id(name)',
+      )
+      .gt('volume_remaining', 0)
+      .order('purchase_date', { ascending: false })
+      .returns<RawPurchase[]>(),
+    supabase
+      .from('inventory_lots')
+      .select(
+        'id, code, product_name, volume_remaining, total_volume, volume_unit, processing_batches:processing_batch_id(processing_date)',
+      )
+      .gt('volume_remaining', 0)
+      .order('code', { ascending: false })
+      .returns<Lot[]>(),
+  ])
 
-  if (rawErr) console.error('[InventoryPage]', rawErr.message)
+  const raws = rawRes.data ?? []
+  const lots = lotsRes.data ?? []
 
-  const raw = rawRows ?? []
-  const isAdmin = user.role === 'admin'
-  const totalRawRemaining = raw.reduce(
-    (sum, r) => sum + Number(r.volume_remaining ?? 0),
-    0,
-  )
+  const rawTotal = raws.reduce((s, x) => s + Number(x.volume_remaining), 0)
+  const lotTotal = lots.reduce((s, x) => s + Number(x.volume_remaining), 0)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold text-slate-900">Inventory</h2>
         <p className="mt-1 text-sm text-slate-600">
-          On-hand stock by stage.{' '}
-          {isAdmin
-            ? 'As an admin you see every organization.'
-            : 'You see your organization only.'}
+          Raw material on hand and processed inventory lots ready for sale.
         </p>
       </div>
 
-      {/* Raw materials */}
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-              Raw materials
-            </h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Greasy wool with remaining volume, newest first.
-            </p>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">
+            Unprocessed (raw)
           </div>
-          <div className="text-right">
-            <div className="text-xs uppercase tracking-wide text-slate-500">
-              On hand
-            </div>
-            <div className="text-2xl font-semibold text-slate-900">
-              {fmtNumber(totalRawRemaining)} t
-            </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {rawTotal.toFixed(1)} t
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {raws.length} purchases with stock
           </div>
         </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">
+            Processed (ready to sell)
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {lotTotal.toFixed(1)} t
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {lots.length} inventory lots
+          </div>
+        </div>
+      </div>
 
-        {raw.length === 0 ? (
-          <div className="px-6 py-10 text-center">
-            <p className="text-sm text-slate-500">No raw material on hand.</p>
-            <Link
-              href="/purchases/new"
-              className="mt-4 inline-block rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white hover:bg-[#0a4a7e]"
-            >
-              Record a purchase
-            </Link>
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Unprocessed raw material
+        </div>
+        {raws.length === 0 ? (
+          <div className="px-6 py-6 text-sm text-slate-500">
+            No raw material in stock.
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-6 py-2 font-medium">Code</th>
-                <th className="px-6 py-2 font-medium">Landbase</th>
-                {isAdmin ? (
-                  <th className="px-6 py-2 font-medium">Organization</th>
-                ) : null}
-                <th className="px-6 py-2 font-medium text-right">Original</th>
-                <th className="px-6 py-2 font-medium text-right">Remaining</th>
-                <th className="px-6 py-2 font-medium text-right">Diameter</th>
-                <th className="px-6 py-2 font-medium text-right">Clip yr.</th>
+                <th className="px-6 py-3">Purchase</th>
+                <th className="px-6 py-3">Commodity</th>
+                <th className="px-6 py-3">Landbase</th>
+                <th className="px-6 py-3">Purchased</th>
+                <th className="px-6 py-3">Remaining</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {raw.map((r) => {
-                const pct =
-                  r.volume > 0
-                    ? (Number(r.volume_remaining) / Number(r.volume)) * 100
-                    : 0
-                return (
-                  <tr key={r.id}>
-                    <td className="px-6 py-3 font-mono text-xs text-slate-900">
-                      {r.code}
-                    </td>
-                    <td className="px-6 py-3 text-slate-800">
-                      <div>{r.landbases?.name ?? '—'}</div>
-                      {r.landbases?.country ? (
-                        <div className="text-xs text-slate-500">
-                          {r.landbases.country}
-                        </div>
-                      ) : null}
-                    </td>
-                    {isAdmin ? (
-                      <td className="px-6 py-3 text-slate-700">
-                        {r.organizations?.name ?? '—'}
-                      </td>
-                    ) : null}
-                    <td className="px-6 py-3 text-right text-slate-500">
-                      {fmtNumber(Number(r.volume))} {r.volume_unit}
-                    </td>
-                    <td className="px-6 py-3 text-right">
-                      <div className="font-medium text-slate-900">
-                        {fmtNumber(Number(r.volume_remaining))} {r.volume_unit}
-                      </div>
-                      <div className="ml-auto mt-1 h-1 w-24 overflow-hidden rounded bg-slate-100">
-                        <div
-                          className="h-full bg-[#063359]"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-6 py-3 text-right text-slate-700">
-                      {r.fibre_diameter
-                        ? `${fmtNumber(Number(r.fibre_diameter), 1)} µm`
-                        : '—'}
-                    </td>
-                    <td className="px-6 py-3 text-right text-slate-700">
-                      {r.year_of_clip ?? '—'}
-                    </td>
-                  </tr>
-                )
-              })}
+            <tbody>
+              {raws.map((r) => (
+                <tr key={r.id} className="border-t border-slate-100">
+                  <td className="px-6 py-3 font-mono text-xs">{r.code}</td>
+                  <td className="px-6 py-3">{r.commodity_type}</td>
+                  <td className="px-6 py-3">{r.landbases?.name ?? '—'}</td>
+                  <td className="px-6 py-3 text-slate-600">{r.purchase_date}</td>
+                  <td className="px-6 py-3">
+                    {Number(r.volume_remaining)} {r.volume_unit}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
-      </section>
+      </div>
 
-      {/* Finished goods — placeholder for MVP */}
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-            Finished goods
-          </h3>
-          <p className="mt-1 text-xs text-slate-500">
-            Processed wool ready for sale.
-          </p>
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Processed inventory lots
         </div>
-        <div className="px-6 py-10 text-center">
-          <p className="text-sm text-slate-500">No finished goods yet.</p>
-          <p className="mt-1 text-xs text-slate-400">
-            Finished inventory will appear here once processing lots are
-            recorded.
-          </p>
-        </div>
-      </section>
+        {lots.length === 0 ? (
+          <div className="px-6 py-6 text-sm text-slate-500">
+            No processed lots. Record a processing batch to convert raw material
+            into a sellable lot.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-6 py-3">Lot</th>
+                <th className="px-6 py-3">Product</th>
+                <th className="px-6 py-3">Processed</th>
+                <th className="px-6 py-3">Remaining / total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lots.map((l) => (
+                <tr key={l.id} className="border-t border-slate-100">
+                  <td className="px-6 py-3 font-mono text-xs">{l.code}</td>
+                  <td className="px-6 py-3">{l.product_name}</td>
+                  <td className="px-6 py-3 text-slate-600">
+                    {l.processing_batches?.processing_date ?? '—'}
+                  </td>
+                  <td className="px-6 py-3">
+                    {Number(l.volume_remaining)} / {Number(l.total_volume)}{' '}
+                    {l.volume_unit}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   )
 }

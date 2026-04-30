@@ -44,8 +44,9 @@ export default async function RootLayout({
             <nav className="space-y-1 flex-1">
               <Link href="/" className={linkClass}>Dashboard</Link>
               <Link href="/landbases" className={linkClass}>Landbases</Link>
-              <Link href="/inventory" className={linkClass}>Inventory</Link>
               <Link href="/purchases" className={linkClass}>Purchases</Link>
+              <Link href="/inventory" className={linkClass}>Inventory</Link>
+              <Link href="/processing" className={linkClass}>Processing</Link>
               <Link href="/sales" className={linkClass}>Sales</Link>
               <Link href="/certificates" className={linkClass}>Certificates</Link>
             </nav>
