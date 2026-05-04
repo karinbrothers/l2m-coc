@@ -6,12 +6,30 @@ type SaleRow = {
   id: string
   code: string
   buyer_name: string
+  buyer_org_id: string | null
   volume: number
   volume_unit: string | null
   sale_date: string
+  status: 'pending' | 'accepted' | 'rejected' | 'expired'
   organizations: { name: string } | null
+  buyer_org: { name: string } | null
   inventory_lots: { code: string; product_name: string } | null
   certificates: { id: string }[] | null
+}
+
+function statusBadge(status: SaleRow['status']) {
+  const map: Record<SaleRow['status'], { label: string; className: string }> = {
+    pending: { label: 'Pending', className: 'bg-amber-100 text-amber-800' },
+    accepted: { label: 'Accepted', className: 'bg-emerald-100 text-emerald-800' },
+    rejected: { label: 'Rejected', className: 'bg-red-100 text-red-800' },
+    expired: { label: 'Expired', className: 'bg-slate-100 text-slate-700' },
+  }
+  const s = map[status] ?? map.accepted
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.className}`}>
+      {s.label}
+    </span>
+  )
 }
 
 export default async function SalesPage() {
@@ -21,14 +39,17 @@ export default async function SalesPage() {
   const { data: sales } = await supabase
     .from('sales')
     .select(
-      'id, code, buyer_name, volume, volume_unit, sale_date, organizations:organization_id(name), inventory_lots:inventory_lot_id(code, product_name), certificates!related_transaction_id(id)',
+      'id, code, buyer_name, buyer_org_id, volume, volume_unit, sale_date, status, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lots:inventory_lot_id(code, product_name), certificates!related_transaction_id(id)',
     )
     .order('sale_date', { ascending: false })
     .returns<SaleRow[]>()
 
   const list = sales ?? []
-  const totalVolume = list.reduce((s, x) => s + Number(x.volume), 0)
+  const totalVolume = list
+    .filter((x) => x.status !== 'rejected' && x.status !== 'expired')
+    .reduce((s, x) => s + Number(x.volume), 0)
   const buyers = new Set(list.map((x) => x.buyer_name))
+  const pendingCount = list.filter((x) => x.status === 'pending').length
 
   return (
     <div className="space-y-6">
@@ -47,15 +68,19 @@ export default async function SalesPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-xs font-medium uppercase text-slate-500">Sales</div>
           <div className="mt-2 text-3xl font-semibold text-slate-900">{list.length}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">Pending</div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">{pendingCount}</div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-xs font-medium uppercase text-slate-500">Volume sold</div>
           <div className="mt-2 text-3xl font-semibold text-slate-900">{totalVolume.toFixed(1)} t</div>
-          <div className="mt-1 text-xs text-slate-500">Cumulative</div>
+          <div className="mt-1 text-xs text-slate-500">Excludes rejected / expired</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-xs font-medium uppercase text-slate-500">Unique buyers</div>
@@ -77,6 +102,7 @@ export default async function SalesPage() {
               <tr>
                 <th className="px-6 py-3">Code</th>
                 <th className="px-6 py-3">Buyer</th>
+                <th className="px-6 py-3">Status</th>
                 <th className="px-6 py-3">From</th>
                 <th className="px-6 py-3">Organization</th>
                 <th className="px-6 py-3">Sold</th>
@@ -87,10 +113,14 @@ export default async function SalesPage() {
             <tbody>
               {list.map((s) => {
                 const certId = s.certificates?.[0]?.id
+                const buyerLabel = s.buyer_org?.name
+                  ? `${s.buyer_org.name} (platform)`
+                  : `${s.buyer_name} (external)`
                 return (
                   <tr key={s.id} className="border-t border-slate-100">
                     <td className="px-6 py-3 font-mono text-xs">{s.code}</td>
-                    <td className="px-6 py-3">{s.buyer_name}</td>
+                    <td className="px-6 py-3">{buyerLabel}</td>
+                    <td className="px-6 py-3">{statusBadge(s.status)}</td>
                     <td className="px-6 py-3">
                       <div className="font-mono text-xs">{s.inventory_lots?.code ?? '—'}</div>
                       <div className="text-xs text-slate-500">{s.inventory_lots?.product_name ?? ''}</div>
@@ -115,7 +145,7 @@ export default async function SalesPage() {
                           View certificate
                         </Link>
                       ) : (
-                        '—'
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
                   </tr>
