@@ -50,7 +50,7 @@ export default async function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <div className="flex min-h-screen">
-          <aside className="w-56 border-r border-slate-200 bg-white p-4 flex flex-col">
+          <aside className="w-56 border-r border-slate-200 bg-white p-4 flex flex-col print:hidden">
             <div className="mb-6">
               <h1 className="text-lg font-bold" style={{ color: '#063359' }}>L2M CoC</h1>
               <p className="text-xs text-slate-500">Chain of Custody</p>

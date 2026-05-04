@@ -51,7 +51,7 @@ export default async function CertificateDetailPage({
 
   return (
     <div className="p-6">
-      <div className="mb-4">
+      <div className="mb-4 print:hidden">
         <Link href="/certificates" className="text-sm font-medium hover:underline" style={{ color: '#063359' }}>← Back to certificates</Link>
       </div>
 
