@@ -8,25 +8,12 @@ import { createClient } from '@/lib/supabase/server'
 export async function generateNextSaleCode(): Promise<string> {
   await requireUser()
   const supabase = await createClient()
-  const year = new Date().getFullYear()
-  const prefix = `SALE-${year}-`
-  const { data, error } = await supabase
-    .from('sales')
-    .select('code')
-    .like('code', `${prefix}%`)
-    .order('code', { ascending: false })
-    .limit(1)
+  const { data, error } = await supabase.rpc('generate_next_sale_code')
   if (error) {
     console.error('[generateNextSaleCode] error:', error)
     throw new Error('Could not generate sale code')
   }
-  let nextNum = 1
-  if (data && data.length > 0) {
-    const tail = (data[0].code as string).slice(prefix.length)
-    const parsed = parseInt(tail, 10)
-    if (!Number.isNaN(parsed)) nextNum = parsed + 1
-  }
-  return `${prefix}${String(nextNum).padStart(4, '0')}`
+  return data as string
 }
 
 /**
