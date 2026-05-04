@@ -34,14 +34,11 @@ type Org = {
 }
 
 function statusBadge(status: PartnerRequest['status']) {
-  const map: Record
-    PartnerRequest['status'],
-    { label: string; className: string }
-  > = {
-    pending: { label: 'Pending', className: 'bg-amber-100 text-amber-800' },
-    approved: { label: 'Approved', className: 'bg-emerald-100 text-emerald-800' },
-    rejected: { label: 'Rejected', className: 'bg-red-100 text-red-800' },
-  }
+    const map: Record<PartnerRequest['status'], { label: string; className: string }> = {
+      pending: { label: 'Pending', className: 'bg-amber-100 text-amber-800' },
+      approved: { label: 'Approved', className: 'bg-emerald-100 text-emerald-800' },
+      rejected: { label: 'Rejected', className: 'bg-red-100 text-red-800' },
+    }
   const s = map[status]
   return (
     <span
