@@ -310,3 +310,110 @@ and silently rendered missing fields after Day 13's schema change.
 - Inventory lots as input to further processing (schema supports it via
   `processing_batch_inputs.source_type = 'inventory_lot'`, UI doesn't
   expose it).
+
+  ### Day 15 — Partner-experience audit + cross-cutting fixes
+
+**Goal:** Test the full L2M flow end-to-end as a real partner (non-admin
+in a non-LtM org) for the first time, then fix every gap that surfaced.
+This was the day the codebase had only ever been driven by an admin
+account, and a lot of latent bugs only show up under partner-role
+constraints.
+
+**Test setup:**
+- Picked **Kering** (185 landbases via Salesforce sync, no other data) as
+  a realistic cold-start partner.
+- Created a partner test user `kbrothers+keringtest@savory.global` via
+  the existing admin invite UI.
+
+**Findings + fixes:**
+
+1. **Invite UI was missing from sidebar nav.** The `/admin/invitations`
+   page existed but no nav entry pointed to it. → Added an admin-gated
+   `<Link href="/admin/invitations">Invitations</Link>` in `layout.tsx`,
+   conditional on the user's profile role.
+
+2. **Invite UI had no organization selector.** Admins could only invite
+   into their own org, so an L2M platform admin couldn't onboard partners
+   into Kering / Atkins Ranch / etc. → Added an Organization dropdown to
+   `/admin/invitations` populated with all orgs (admin's own org floats
+   to the top with `(your org)` tag); the action defaults to the admin's
+   own org if none selected. Updated invitation list view to show the
+   org column and span all orgs.
+
+3. **Invitations RLS blocked cross-org inserts** (migration 16). The
+   `invitations_insert_admin` / `invitations_select_admin` /
+   `invitations_update_admin` policies all required
+   `p.organization_id = invitations.organization_id`. Loosened to just
+   `is_admin()` so admins can invite/view/revoke for any org.
+
+4. **Sale codes collided across orgs** (migration 17). `generateNextSaleCode`
+   queried the sales table through RLS, so a partner with no sales saw
+   "next is 0001" even when LtM already had `SALE-2026-0001`. Two-org
+   collision actually happened during the test. Fix: renamed Kering's
+   `SALE-2026-0001` to `SALE-2026-0002`, added unique index on
+   `sales.code`, replaced the JS code-gen with a SECURITY DEFINER RPC
+   `generate_next_sale_code()` that bypasses RLS.
+
+5. **Cross-org trace exposure** (migration 17). `get_trace_by_sale_code`
+   was SECURITY DEFINER (rightly) but had no authz check, so a Kering
+   partner navigating to `/trace/SALE-2026-0001` could see Land to
+   Market's full chain. Fix: added an authz check inside the function:
+   admins see any trace, partners only see traces whose sale belongs to
+   their org. Returns null otherwise (page renders the "Trace not found"
+   state).
+
+6. **Certificates RLS broke partner inserts and selects** (migration 17).
+   Two problems in the same file:
+   - `certs_insert` was `is_admin()` only — every TC and OC insert
+     attempted by a partner silently failed. (No errors thrown; the
+     actions log-and-continue on cert failures, by design.)
+   - `certs_select` still referenced the obsolete `sale_transactions`
+     table from the Day-1 schema (with `seller_org_id`/`buyer_org_id`),
+     never updated when Day 13 swapped to the `sales` table. So even
+     when partner certs *did* exist, RLS hid them.
+   Fix: rewrote both policies to allow admins, plus org members of
+   either the related raw purchase OR the related sale.
+
+7. **Purchase codes collided globally on certificate_number**
+   (migration 18). Same root pattern as sales codes — purchase codes
+   are per-org but `certificates.certificate_number = OC-{purchase_code}`
+   is globally unique. Two orgs with `WOOL-2026-0001` → `OC-WOOL-2026-0001`
+   collision. Fix: idempotent rename of any duplicate codes (keep
+   oldest, renumber newer to next-free), unique index on
+   `raw_material_purchases.code`, SECURITY DEFINER RPC
+   `generate_next_purchase_code()`.
+
+8. **Origin certs had never been auto-created for the partner.** Same
+   underlying cause as #6 (admin-only certs_insert). Once #6 was fixed,
+   future purchases got their OCs automatically. Backfilled missing OCs
+   with an idempotent SQL block that creates an OC for any
+   `raw_material_purchases` row currently missing one.
+
+**Side quest — Print-to-PDF download:**
+- Added a `PrintButton` client component (calls `window.print()`).
+- Wired into `OriginCertificate` and `TransactionCertificate`.
+- Added `print:hidden` Tailwind classes to the sidebar (`<aside>`),
+  the back link in the certificate detail page, the Print button itself,
+  and the "View full provenance trace" link — so the printed page is
+  just the certificate.
+
+**Verification:**
+- Walked the full partner flow as Kering on prod: record purchase →
+  process batch → record sale → view certificate → view full provenance
+  trace. All four steps now work, OCs auto-issue, TCs auto-issue and
+  auto-link to OCs with proportional volume attribution.
+- Confirmed `/trace/SALE-2026-0002` (Land to Market's renamed sale)
+  returns "Trace not found" for the Kering partner. Cross-org isolation
+  holds.
+- Sidebar Invitations link correctly hidden for the partner.
+
+**Open / deferred:**
+- Email signups remain disabled at the Supabase auth level (admin-invite
+  only). Documented behavior; no code change.
+- Buyer-side acceptance flow (`sale_transactions.status` /
+  `accepted_at` / `response_deadline` from the Day-1 schema) still
+  unwired.
+- Partner-facing public/shareable trace URLs (so a buyer who isn't an
+  L2M user can verify a sale) — currently auth-gated only.
+- `@page` CSS rules to clean up browser-injected headers/footers on the
+  printed PDF.
