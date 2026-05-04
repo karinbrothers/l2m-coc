@@ -23,8 +23,7 @@ type Org = {
 function errorCopy(code: string | undefined): string | null {
   if (!code) return null
   if (code === 'missing_source') return 'Please choose an inventory lot.'
-  if (code === 'missing_buyer') return 'Please enter a buyer name.'
-  if (code === 'missing_buyer_org') return 'Please pick a platform buyer.'
+  if (code === 'missing_buyer_org') return 'Please pick a buyer.'
   if (code === 'invalid_buyer_org')
     return 'That buyer organization does not exist.'
   if (code === 'invalid_volume') return 'Volume must be a positive number.'
@@ -52,7 +51,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
     supabase
       .from('organizations')
       .select('id, name')
-      .neq('id', user.organization_id) // can't sell to yourself
+      .neq('id', user.organization_id)
       .order('name', { ascending: true })
       .returns<Org[]>(),
   ])
@@ -71,7 +70,8 @@ export default async function NewSalePage({ searchParams }: PageProps) {
         </div>
         <h2 className="mt-2 text-2xl font-semibold text-slate-900">New sale</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Record a sale drawn from a processed inventory lot.
+          Record a sale drawn from a processed inventory lot. The buyer will
+          see this in their inbox and can accept or reject.
         </p>
       </div>
 
@@ -90,7 +90,6 @@ export default async function NewSalePage({ searchParams }: PageProps) {
           action={createSale}
           className="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
         >
-          {/* Source lot */}
           <div>
             <label
               htmlFor="inventory_lot_id"
@@ -117,91 +116,41 @@ export default async function NewSalePage({ searchParams }: PageProps) {
             </select>
           </div>
 
-          {/* Buyer type radio */}
-          <fieldset className="rounded-md border border-slate-200 p-4">
-            <legend className="px-2 text-sm font-medium text-slate-700">
-              Buyer type
-            </legend>
-            <div className="mt-2 space-y-2">
-              <label className="flex items-start gap-3">
-                <input
-                  type="radio"
-                  name="buyer_type"
-                  value="external"
-                  defaultChecked
-                  className="mt-1"
-                />
-                <div>
-                  <div className="text-sm font-medium text-slate-900">
-                    External buyer
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Buyer is not on the platform. Sale is auto-accepted, TC is
-                    issued immediately.
-                  </div>
-                </div>
-              </label>
-              <label className="flex items-start gap-3">
-                <input
-                  type="radio"
-                  name="buyer_type"
-                  value="platform"
-                  className="mt-1"
-                />
-                <div>
-                  <div className="text-sm font-medium text-slate-900">
-                    Platform partner
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Buyer is an L2M partner org. They&apos;ll see the sale in
-                    their inbox and can accept or reject.
-                  </div>
-                </div>
-              </label>
-            </div>
-          </fieldset>
-
-          {/* External buyer name */}
-          <div>
-            <label
-              htmlFor="buyer_name"
-              className="mb-1 block text-sm font-medium text-slate-700"
-            >
-              External buyer name
-            </label>
-            <input
-              id="buyer_name"
-              name="buyer_name"
-              type="text"
-              placeholder="e.g. Patagonia Inc. (only used if buyer type = external)"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-            />
-          </div>
-
-          {/* Platform buyer org */}
           <div>
             <label
               htmlFor="buyer_org_id"
               className="mb-1 block text-sm font-medium text-slate-700"
             >
-              Platform buyer organization
+              Buyer <span className="text-red-600">*</span>
             </label>
             <select
               id="buyer_org_id"
               name="buyer_org_id"
+              required
               defaultValue=""
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             >
-              <option value="">— Pick a partner (only if buyer type = platform) —</option>
+              <option value="" disabled>
+                Pick a partner…
+              </option>
               {orgs.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Don&apos;t see your buyer?{' '}
+              <Link
+                href="/partner-requests/new"
+                className="font-medium hover:underline"
+                style={{ color: '#063359' }}
+              >
+                Request to add them →
+              </Link>
+            </p>
           </div>
 
-          {/* Volume + sale date */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label
@@ -238,28 +187,6 @@ export default async function NewSalePage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          {/* Response window (platform only) */}
-          <div>
-            <label
-              htmlFor="response_days"
-              className="mb-1 block text-sm font-medium text-slate-700"
-            >
-              Buyer response window (days)
-            </label>
-            <input
-              id="response_days"
-              name="response_days"
-              type="number"
-              min="1"
-              defaultValue="14"
-              className="w-32 rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Only used for platform buyers. Defaults to 14 days.
-            </p>
-          </div>
-
-          {/* Notes */}
           <div>
             <label
               htmlFor="notes"
@@ -287,7 +214,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
               type="submit"
               className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e] focus:outline-none focus:ring-2 focus:ring-[#063359] focus:ring-offset-2"
             >
-              Record sale
+              Send to buyer
             </button>
           </div>
         </form>

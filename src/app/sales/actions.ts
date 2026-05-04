@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 
+const DEFAULT_RESPONSE_DAYS = 14
+
 export async function generateNextSaleCode(): Promise<string> {
   await requireUser()
   const supabase = await createClient()
@@ -17,73 +19,48 @@ export async function generateNextSaleCode(): Promise<string> {
 }
 
 /**
- * Record a sale.
- *
- *   - "external" buyer  → free-text buyer_name, status='accepted' immediately,
- *                          TC auto-issued + linked to OCs (existing flow).
- *   - "platform" buyer  → buyer_org_id from dropdown, status='pending',
- *                          response_deadline = now + N days. TC NOT issued yet
- *                          (will be issued when buyer accepts in /inbox).
+ * Record a sale to a platform partner. Sale starts in 'pending' status;
+ * the buyer accepts or rejects from /inbox. TC issues on acceptance.
  */
 export async function createSale(formData: FormData) {
   await requireUser()
   const supabase = await createClient()
 
   const inventoryLotId = String(formData.get('inventory_lot_id') ?? '').trim()
-  const buyerType = String(formData.get('buyer_type') ?? 'external').trim()
+  const buyerOrgId = String(formData.get('buyer_org_id') ?? '').trim()
   const volumeRaw = String(formData.get('volume') ?? '').trim()
   const saleDate =
     String(formData.get('sale_date') ?? '').trim() ||
     new Date().toISOString().slice(0, 10)
   const notes = String(formData.get('notes') ?? '').trim() || null
 
-  // Buyer-type-specific fields
-  const buyerNameRaw = String(formData.get('buyer_name') ?? '').trim()
-  const buyerOrgIdRaw = String(formData.get('buyer_org_id') ?? '').trim()
-  const responseDaysRaw = String(formData.get('response_days') ?? '14').trim()
-
   if (!inventoryLotId) redirect('/sales/new?error=missing_source')
+  if (!buyerOrgId) redirect('/sales/new?error=missing_buyer_org')
 
   const volume = Number(volumeRaw)
   if (!Number.isFinite(volume) || volume <= 0) {
     redirect('/sales/new?error=invalid_volume')
   }
 
-  let buyerName: string
-  let buyerOrgId: string | null
-  let responseDays: number
-
-  if (buyerType === 'platform') {
-    if (!buyerOrgIdRaw) redirect('/sales/new?error=missing_buyer_org')
-    // Look up the org's name to use as buyer_name (NOT NULL column)
-    const { data: org } = await supabase
-      .from('organizations')
-      .select('name')
-      .eq('id', buyerOrgIdRaw)
-      .maybeSingle()
-    if (!org) redirect('/sales/new?error=invalid_buyer_org')
-    buyerName = org.name
-    buyerOrgId = buyerOrgIdRaw
-    responseDays = Number(responseDaysRaw)
-    if (!Number.isFinite(responseDays) || responseDays <= 0) responseDays = 14
-  } else {
-    if (!buyerNameRaw) redirect('/sales/new?error=missing_buyer')
-    buyerName = buyerNameRaw
-    buyerOrgId = null
-    responseDays = 14 // unused for external; passed for completeness
-  }
+  // Look up the buyer org's name for buyer_name (NOT NULL column)
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('name')
+    .eq('id', buyerOrgId)
+    .maybeSingle()
+  if (!org) redirect('/sales/new?error=invalid_buyer_org')
 
   const code = await generateNextSaleCode()
 
-  const { data: rpcData, error: rpcErr } = await supabase.rpc('record_sale', {
+  const { error: rpcErr } = await supabase.rpc('record_sale', {
     p_code: code,
     p_inventory_lot_id: inventoryLotId,
-    p_buyer_name: buyerName,
+    p_buyer_name: org.name,
     p_buyer_org_id: buyerOrgId,
     p_volume: volume,
     p_sale_date: saleDate,
     p_notes: notes,
-    p_response_days: responseDays,
+    p_response_days: DEFAULT_RESPONSE_DAYS,
   })
 
   if (rpcErr) {
@@ -100,43 +77,18 @@ export async function createSale(formData: FormData) {
     redirect('/sales/new?error=unknown')
   }
 
-  const sale = rpcData as {
-    id: string
-    code: string
-    organization_id: string
-    inventory_lot_id: string
-    buyer_name: string
-    buyer_org_id: string | null
-    volume: number
-    sale_date: string
-    status: 'pending' | 'accepted' | 'rejected' | 'expired'
-  } | null
-
-  if (!sale) {
-    console.error('[createSale] record_sale returned no data')
-    revalidatePath('/sales')
-    redirect('/sales')
-  }
-
-  // Only auto-issue TC if the sale was immediately accepted (external buyer).
-  // For platform buyers, the TC is issued when the buyer accepts.
-  if (sale.status === 'accepted') {
-    await issueTransactionCertificate(supabase, sale)
-  }
+  // TC is NOT issued here — it's issued when the buyer accepts the sale
+  // in /inbox. See acceptSale in src/app/inbox/actions.ts (Block 3).
 
   revalidatePath('/sales')
-  revalidatePath('/certificates')
   revalidatePath('/inventory')
   redirect('/sales')
 }
 
 /**
- * Issue a Transaction Certificate for a sale and link it to all origin
- * certificates in the lot's processing chain (proportionally attributed).
- *
- * Called from:
- *   - createSale (external-buyer path, immediate)
- *   - acceptSale  (platform-buyer path, after buyer accepts)
+ * Issue a Transaction Certificate for an accepted sale. Called from the
+ * inbox accept flow. Walks: lot → batch → batch_inputs → raw_purchases →
+ * origin certs, attributes volume proportionally, inserts TC + links.
  */
 export async function issueTransactionCertificate(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -170,7 +122,6 @@ export async function issueTransactionCertificate(
   if (orgRes.error)
     console.error('[issueTC] org lookup error:', orgRes.error)
 
-  // Walk the chain: batch_inputs → raw purchases → origin certs.
   const originAttributions: Array<{
     origin_certificate_id: string
     volume_attributed: number
