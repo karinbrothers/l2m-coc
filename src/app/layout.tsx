@@ -30,7 +30,21 @@ export default async function RootLayout({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const userEmail = user?.email ?? null;
+
+  let userEmail: string | null = null;
+  let userRole: string | null = null;
+
+  if (user) {
+    userEmail = user.email ?? null;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    userRole = profile?.role ?? null;
+  }
+
+  const isAdmin = userRole === "admin";
 
   return (
     <html lang="en">
@@ -49,6 +63,9 @@ export default async function RootLayout({
               <Link href="/processing" className={linkClass}>Processing</Link>
               <Link href="/sales" className={linkClass}>Sales</Link>
               <Link href="/certificates" className={linkClass}>Certificates</Link>
+              {isAdmin ? (
+                <Link href="/admin/invitations" className={linkClass}>Invitations</Link>
+              ) : null}
             </nav>
             {userEmail ? (
               <div className="mt-4 border-t border-slate-200 pt-4">

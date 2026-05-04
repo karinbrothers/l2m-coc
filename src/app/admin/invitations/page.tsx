@@ -11,6 +11,11 @@ type PageProps = {
   }>
 }
 
+type Org = {
+  id: string
+  name: string
+}
+
 type Invitation = {
   id: string
   email: string
@@ -19,14 +24,17 @@ type Invitation = {
   created_at: string
   expires_at: string
   accepted_at: string | null
+  organization: { name: string } | null
 }
 
 function errorCopy(code: string | undefined): string | null {
   if (!code) return null
   if (code === 'missing_email') return 'Please enter an email address.'
+  if (code === 'missing_org') return 'Please pick an organization.'
   if (code === 'invalid_role') return 'Role must be admin or partner.'
+  if (code === 'invalid_org') return 'That organization does not exist.'
   if (code === 'already_invited')
-    return 'This email already has a pending invitation for your organization.'
+    return 'This email already has a pending invitation for that organization.'
   if (code === 'missing_id') return 'Invitation id was missing from the request.'
   if (code.startsWith('email_send_failed:'))
     return `Invitation row was created, but the magic link email failed to send. Details: ${code.slice('email_send_failed:'.length)}`
@@ -48,23 +56,42 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
   const { sent, email, error, revoked } = await searchParams
 
   const supabase = await createClient()
-  const { data: invitations } = await supabase
-    .from('invitations')
-    .select('id, email, role, status, created_at, expires_at, accepted_at')
-    .eq('organization_id', admin.organization_id)
-    .order('created_at', { ascending: false })
-    .returns<Invitation[]>()
 
-  const rows = invitations ?? []
-  const pendingRows = rows.filter((r) => r.status === 'pending')
-  const historyRows = rows.filter((r) => r.status !== 'pending')
+  // Pull all orgs for the org selector AND the invitations list (cross-org).
+  const [orgsRes, invsRes] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select('id, name')
+      .order('name', { ascending: true })
+      .returns<Org[]>(),
+    supabase
+      .from('invitations')
+      .select(
+        'id, email, role, status, created_at, expires_at, accepted_at, organization:organization_id(name)',
+      )
+      .order('created_at', { ascending: false })
+      .returns<Invitation[]>(),
+  ])
+
+  const orgs = orgsRes.data ?? []
+  const invitations = invsRes.data ?? []
+
+  // Sort orgs so the admin's own org floats to the top, then alphabetical.
+  const sortedOrgs = [...orgs].sort((a, b) => {
+    if (a.id === admin.organization_id) return -1
+    if (b.id === admin.organization_id) return 1
+    return a.name.localeCompare(b.name)
+  })
+
+  const pendingRows = invitations.filter((r) => r.status === 'pending')
+  const historyRows = invitations.filter((r) => r.status !== 'pending')
 
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-semibold text-slate-900">Invitations</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Invite new users into your organization. They&apos;ll receive a
+          Invite new users into any organization. They&apos;ll receive a
           magic-link email and land signed in with the role you choose.
         </p>
       </div>
@@ -92,8 +119,8 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
           Invite a new user
         </h3>
-        <form action={createInvitation} className="mt-4 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[260px]">
+        <form action={createInvitation} className="mt-4 space-y-4">
+          <div>
             <label
               htmlFor="email"
               className="mb-1 block text-sm font-medium text-slate-700"
@@ -110,29 +137,55 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             />
           </div>
-          <div>
-            <label
-              htmlFor="role"
-              className="mb-1 block text-sm font-medium text-slate-700"
-            >
-              Role
-            </label>
-            <select
-              id="role"
-              name="role"
-              defaultValue="partner"
-              className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-            >
-              <option value="partner">Partner</option>
-              <option value="admin">Admin</option>
-            </select>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label
+                htmlFor="organization_id"
+                className="mb-1 block text-sm font-medium text-slate-700"
+              >
+                Organization
+              </label>
+              <select
+                id="organization_id"
+                name="organization_id"
+                required
+                defaultValue={admin.organization_id}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+              >
+                {sortedOrgs.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                    {org.id === admin.organization_id ? ' (your org)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="role"
+                className="mb-1 block text-sm font-medium text-slate-700"
+              >
+                Role
+              </label>
+              <select
+                id="role"
+                name="role"
+                defaultValue="partner"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+              >
+                <option value="partner">Partner</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
           </div>
-          <button
-            type="submit"
-            className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e] focus:outline-none focus:ring-2 focus:ring-[#063359] focus:ring-offset-2"
-          >
-            Send invitation
-          </button>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e] focus:outline-none focus:ring-2 focus:ring-[#063359] focus:ring-offset-2"
+            >
+              Send invitation
+            </button>
+          </div>
         </form>
       </div>
 
@@ -152,6 +205,7 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-6 py-2 font-medium">Email</th>
+                <th className="px-6 py-2 font-medium">Organization</th>
                 <th className="px-6 py-2 font-medium">Role</th>
                 <th className="px-6 py-2 font-medium">Sent</th>
                 <th className="px-6 py-2 font-medium">Expires</th>
@@ -162,6 +216,9 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
               {pendingRows.map((inv) => (
                 <tr key={inv.id}>
                   <td className="px-6 py-3 text-slate-900">{inv.email}</td>
+                  <td className="px-6 py-3 text-slate-700">
+                    {inv.organization?.name ?? '—'}
+                  </td>
                   <td className="px-6 py-3 text-slate-700">{inv.role}</td>
                   <td className="px-6 py-3 text-slate-500">
                     {formatDate(inv.created_at)}
@@ -199,6 +256,7 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-6 py-2 font-medium">Email</th>
+                <th className="px-6 py-2 font-medium">Organization</th>
                 <th className="px-6 py-2 font-medium">Role</th>
                 <th className="px-6 py-2 font-medium">Status</th>
                 <th className="px-6 py-2 font-medium">Sent</th>
@@ -209,6 +267,9 @@ export default async function InvitationsPage({ searchParams }: PageProps) {
               {historyRows.map((inv) => (
                 <tr key={inv.id}>
                   <td className="px-6 py-3 text-slate-900">{inv.email}</td>
+                  <td className="px-6 py-3 text-slate-700">
+                    {inv.organization?.name ?? '—'}
+                  </td>
                   <td className="px-6 py-3 text-slate-700">{inv.role}</td>
                   <td className="px-6 py-3">
                     <span

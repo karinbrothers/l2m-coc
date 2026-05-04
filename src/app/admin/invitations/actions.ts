@@ -9,9 +9,12 @@ import { requireAdmin } from '@/lib/auth/requireAdmin'
 /**
  * Admin-only: create a pending invitation and email a magic link.
  *
+ * Admins can invite users into ANY organization (not just their own) so that
+ * an L2M platform admin can onboard partners into Kering, Atkins Ranch, etc.
+ *
  * Flow:
  *   1. Verify the caller is an admin (requireAdmin)
- *   2. Insert an invitations row for (email, caller's org, role)
+ *   2. Insert an invitations row for (email, selected org, role)
  *   3. Call signInWithOtp so Supabase emails the invitee a magic link
  *   4. When they click the link, handle_new_user (migration 05) stamps
  *      their profile with the invitation's org_id + role and marks the
@@ -24,6 +27,9 @@ export async function createInvitation(formData: FormData) {
 
   const email = String(formData.get('email') ?? '').trim().toLowerCase()
   const role = String(formData.get('role') ?? 'partner')
+  const organizationId =
+    String(formData.get('organization_id') ?? '').trim() ||
+    admin.organization_id
 
   if (!email) {
     redirect('/admin/invitations?error=missing_email')
@@ -33,7 +39,23 @@ export async function createInvitation(formData: FormData) {
     redirect('/admin/invitations?error=invalid_role')
   }
 
+  if (!organizationId) {
+    redirect('/admin/invitations?error=missing_org')
+  }
+
   const supabase = await createClient()
+
+  // Verify the selected org actually exists (defense against a doctored form
+  // submission). RLS allows admins to read all orgs.
+  const { data: orgRow, error: orgErr } = await supabase
+    .from('organizations')
+    .select('id')
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (orgErr || !orgRow) {
+    redirect('/admin/invitations?error=invalid_org')
+  }
 
   // 1. Insert the invitation row. Unique index on (lower(email), org) WHERE
   //    status = 'pending' will reject duplicates with a constraint error.
@@ -41,7 +63,7 @@ export async function createInvitation(formData: FormData) {
     .from('invitations')
     .insert({
       email,
-      organization_id: admin.organization_id,
+      organization_id: organizationId,
       role,
       invited_by: admin.id,
     })
@@ -85,9 +107,10 @@ export async function createInvitation(formData: FormData) {
 /**
  * Admin-only: revoke a still-pending invitation.
  * Marks status = 'revoked' rather than deleting, to preserve audit trail.
+ * Admins can revoke any pending invitation across orgs.
  */
 export async function revokeInvitation(formData: FormData) {
-  const admin = await requireAdmin()
+  await requireAdmin()
   const invitationId = String(formData.get('invitation_id') ?? '')
 
   if (!invitationId) {
@@ -100,7 +123,6 @@ export async function revokeInvitation(formData: FormData) {
     .from('invitations')
     .update({ status: 'revoked' })
     .eq('id', invitationId)
-    .eq('organization_id', admin.organization_id) // defense in depth; RLS also enforces
     .eq('status', 'pending')
 
   if (error) {
