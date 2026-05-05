@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
-import { issueTransactionCertificate } from '../sales/actions'
 
 type AcceptedSale = {
   id: string
@@ -39,11 +38,7 @@ export async function acceptSale(formData: FormData) {
     redirect(`/inbox?error=${encodeURIComponent(rpcErr.message)}`)
   }
 
-  const sale = data as AcceptedSale | null
-
-  if (sale && sale.status === 'accepted') {
-    await issueTransactionCertificate(supabase, sale)
-  }
+  // accept_sale RPC now also issues the TC server-side
 
   revalidatePath('/inbox')
   revalidatePath('/sales')
