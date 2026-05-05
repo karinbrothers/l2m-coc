@@ -33,16 +33,17 @@ function statusBadge(status: SaleRow['status']) {
 }
 
 export default async function SalesPage() {
-  await requireUser()
+  const user = await requireUser()
   const supabase = await createClient()
 
   const { data: sales } = await supabase
-    .from('sales')
-    .select(
-      'id, code, buyer_name, buyer_org_id, volume, volume_unit, sale_date, status, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lots:inventory_lot_id(code, product_name), certificates!related_transaction_id(id)',
-    )
-    .order('sale_date', { ascending: false })
-    .returns<SaleRow[]>()
+  .from('sales')
+  .select(
+    'id, code, buyer_name, buyer_org_id, volume, volume_unit, sale_date, status, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lots:inventory_lot_id(code, product_name), certificates!related_transaction_id(id)',
+  )
+  .eq('organization_id', user.organization_id)
+  .order('sale_date', { ascending: false })
+  .returns<SaleRow[]>()
 
   const list = sales ?? []
   const totalVolume = list
@@ -57,7 +58,7 @@ export default async function SalesPage() {
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Sales</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Records of inventory sold. As an admin you see every organization.
+            Sales your organization has sent out. Incoming sales show up in your inbox.
           </p>
         </div>
         <Link
