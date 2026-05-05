@@ -45,6 +45,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
     supabase
       .from('inventory_lots')
       .select('id, code, product_name, volume_remaining, volume_unit')
+      .eq('organization_id', user.organization_id)
       .gt('volume_remaining', 0)
       .order('code', { ascending: true })
       .returns<AvailableLot[]>(),
