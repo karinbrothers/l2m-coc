@@ -8,7 +8,9 @@ type RawPurchase = {
   volume_unit: string
   commodity_type: string
   purchase_date: string
+  source_sale_id: string | null
   landbases: { name: string } | null
+  source_sale: { seller_org: { name: string } | null } | null
 }
 
 type Lot = {
@@ -27,11 +29,11 @@ export default async function InventoryPage() {
 
   const [rawRes, lotsRes] = await Promise.all([
     supabase
-      .from('raw_material_purchases')
-      .select(
-        'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, landbases:landbase_id(name)',
-      )
-      .gt('volume_remaining', 0)
+    .from('raw_material_purchases')
+    .select(
+      'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, source_sale_id, landbases:landbase_id(name), source_sale:sales!source_sale_id(seller_org:organization_id(name))',
+    )
+    .gt('volume_remaining', 0)
       .order('purchase_date', { ascending: false })
       .returns<RawPurchase[]>(),
     supabase
@@ -108,7 +110,11 @@ export default async function InventoryPage() {
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-6 py-3 font-mono text-xs">{r.code}</td>
                   <td className="px-6 py-3">{r.commodity_type}</td>
-                  <td className="px-6 py-3">{r.landbases?.name ?? '—'}</td>
+                  <td className="px-6 py-3">
+                    {r.source_sale_id
+                      ? `Received from ${r.source_sale?.seller_org?.name ?? 'unknown'}`
+                      : (r.landbases?.name ?? '—')}
+                  </td>
                   <td className="px-6 py-3 text-slate-600">{r.purchase_date}</td>
                   <td className="px-6 py-3">
                     {Number(r.volume_remaining)} {r.volume_unit}

@@ -2,55 +2,31 @@ import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 
-type PageProps = {
-  searchParams: Promise<{
-    created?: string
-  }>
-}
-
-type LandbaseLite = {
-  id: string
-  name: string
-  country: string | null
-}
-
-type OrgLite = {
-  id: string
-  name: string
-}
-
-type CertLite = {
-  id: string
-  type: string
-}
-
-type PurchaseRow = {
+type Purchase = {
   id: string
   code: string
-  organization_id: string
-  landbase_id: string
   volume: number
   volume_remaining: number
   volume_unit: string
-  commodity_type: string
-  fibre_diameter: number | null
-  year_of_clip: number | null
-  batch_number: string | null
+  commodity_type: string | null
   purchase_date: string | null
-  created_at: string
-  landbases: LandbaseLite | null
-  organizations: OrgLite | null
-  certificates: CertLite[] | null
+  year_of_clip: number | null
+  fibre_diameter: number | null
+  source_sale_id: string | null
+  landbases: { name: string; country: string | null } | null
+  origin_cert: { id: string; certificate_number: string | null }[] | null
+  source_sale: {
+    code: string | null
+    seller_org: { name: string } | null
+  } | null
 }
 
-function fmtNumber(n: number, digits = 2): string {
-  return n.toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  })
+type SaleTc = {
+  id: string
+  related_transaction_id: string
 }
 
-function fmtDate(iso: string | null): string {
+function formatDate(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('en-US', {
     month: 'short',
@@ -59,194 +35,199 @@ function fmtDate(iso: string | null): string {
   })
 }
 
-export default async function PurchasesPage({ searchParams }: PageProps) {
-  const user = await requireUser()
-  const { created } = await searchParams
-
+export default async function PurchasesPage() {
+  await requireUser()
   const supabase = await createClient()
 
-  const { data: rows, error } = await supabase
+  const { data: purchases } = await supabase
     .from('raw_material_purchases')
     .select(
       `
-      id,
-      code,
-      organization_id,
-      landbase_id,
-      volume,
-      volume_remaining,
-      volume_unit,
-      commodity_type,
-      fibre_diameter,
-      year_of_clip,
-      batch_number,
-      purchase_date,
-      created_at,
-      landbases:landbase_id ( id, name, country ),
-      organizations:organization_id ( id, name ),
-      certificates!related_purchase_id ( id, type )
-      `,
+      id, code, volume, volume_remaining, volume_unit, commodity_type,
+      purchase_date, year_of_clip, fibre_diameter, source_sale_id,
+      landbases:landbase_id (name, country),
+      origin_cert:certificates!related_purchase_id (id, certificate_number),
+      source_sale:sales!source_sale_id (
+        code,
+        seller_org:organization_id (name)
+      )
+    `,
     )
-    .order('purchase_date', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
-    .returns<PurchaseRow[]>()
+    .order('purchase_date', { ascending: false })
+    .returns<Purchase[]>()
 
-  if (error) {
-    console.error('[PurchasesPage]', error.message)
+  const list = purchases ?? []
+
+  // For received purchases, fetch the TC of the source sale separately
+  const sourceSaleIds = list
+    .map((p) => p.source_sale_id)
+    .filter((id): id is string => id !== null)
+
+  const tcsBySaleId = new Map<string, string>()
+  if (sourceSaleIds.length > 0) {
+    const { data: tcs } = await supabase
+      .from('certificates')
+      .select('id, related_transaction_id')
+      .in('related_transaction_id', sourceSaleIds)
+      .eq('type', 'transaction')
+      .returns<SaleTc[]>()
+    for (const tc of tcs ?? []) {
+      tcsBySaleId.set(tc.related_transaction_id, tc.id)
+    }
   }
 
-  const purchases = rows ?? []
-  const isAdmin = user.role === 'admin'
-
-  // Totals visible to this user (RLS-filtered).
-  const totalVolume = purchases.reduce((sum, p) => sum + Number(p.volume ?? 0), 0)
-  const totalRemaining = purchases.reduce(
-    (sum, p) => sum + Number(p.volume_remaining ?? 0),
+  const totalCount = list.length
+  const totalVolume = list.reduce((s, p) => s + Number(p.volume), 0)
+  const totalRemaining = list.reduce(
+    (s, p) => s + Number(p.volume_remaining),
     0,
   )
+  const directCount = list.filter((p) => !p.source_sale_id).length
+  const receivedCount = list.filter((p) => p.source_sale_id).length
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Purchases</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Raw material purchases from eligible landbases.{' '}
-            {isAdmin
-              ? 'As an admin you see every organization.'
-              : 'You see purchases made by your organization.'}
+            Raw material on hand — purchased directly from landbases or received
+            from accepted sales. All material here can be drawn into processing.
           </p>
         </div>
         <Link
           href="/purchases/new"
-          className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e] focus:outline-none focus:ring-2 focus:ring-[#063359] focus:ring-offset-2"
+          className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e]"
         >
           + New purchase
         </Link>
       </div>
 
-      {created ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          Purchase <strong>{created}</strong> created.
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">
+            Purchases
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {totalCount}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {directCount} direct · {receivedCount} received
+          </div>
         </div>
-      ) : null}
-
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <SummaryCard label="Purchases" value={String(purchases.length)} />
-        <SummaryCard
-          label="Total volume"
-          value={`${fmtNumber(totalVolume)} t`}
-          hint="Greasy wool purchased"
-        />
-        <SummaryCard
-          label="Remaining"
-          value={`${fmtNumber(totalRemaining)} t`}
-          hint="Not yet drawn into processing"
-        />
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">
+            Total volume
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {totalVolume.toFixed(0)} t
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">
+            Remaining
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {totalRemaining.toFixed(0)} t
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            Not yet drawn into processing
+          </div>
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-            All purchases
-          </h3>
+      {list.length === 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+          No purchases yet. Record a direct purchase from a landbase, or accept
+          an incoming sale from your inbox.
         </div>
-
-        {purchases.length === 0 ? (
-          <div className="px-6 py-10 text-center">
-            <p className="text-sm text-slate-500">
-              No purchases yet.
-            </p>
-            <Link
-              href="/purchases/new"
-              className="mt-4 inline-block rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white hover:bg-[#0a4a7e]"
-            >
-              Record your first purchase
-            </Link>
+      ) : (
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            All purchases
           </div>
-        ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-6 py-2 font-medium">Code</th>
-                <th className="px-6 py-2 font-medium">Landbase</th>
-                {isAdmin ? (
-                  <th className="px-6 py-2 font-medium">Organization</th>
-                ) : null}
-                <th className="px-6 py-2 font-medium">Purchased</th>
-                <th className="px-6 py-2 font-medium text-right">Volume</th>
-                <th className="px-6 py-2 font-medium text-right">Remaining</th>
-                <th className="px-6 py-2 font-medium text-right">Diameter</th>
-                <th className="px-6 py-2 font-medium text-right">Clip yr.</th>
-                <th className="px-6 py-2 font-medium text-right">Certificate</th>
+                <th className="px-6 py-3">Code</th>
+                <th className="px-6 py-3">Source</th>
+                <th className="px-6 py-3">Purchased</th>
+                <th className="px-6 py-3">Volume</th>
+                <th className="px-6 py-3">Remaining</th>
+                <th className="px-6 py-3">Diameter</th>
+                <th className="px-6 py-3">Clip yr.</th>
+                <th className="px-6 py-3">Certificate</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {purchases.map((p) => {
-                const originCert = p.certificates?.find((c) => c.type === 'origin')
+            <tbody>
+              {list.map((p) => {
+                const isReceived = !!p.source_sale_id
+                const tcId = isReceived
+                  ? tcsBySaleId.get(p.source_sale_id!)
+                  : null
+                const ocId = p.origin_cert?.[0]?.id ?? null
+
                 return (
-                  <tr key={p.id}>
-                    <td className="px-6 py-3 font-mono text-xs text-slate-900">
-                      {p.code}
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="px-6 py-3 font-mono text-xs">{p.code}</td>
+                    <td className="px-6 py-3">
+                      {isReceived ? (
+                        <>
+                          <div className="text-xs uppercase text-slate-500">
+                            Received from
+                          </div>
+                          <div className="text-sm text-slate-900">
+                            {p.source_sale?.seller_org?.name ?? '—'}
+                          </div>
+                          {p.source_sale?.code ? (
+                            <div className="text-xs text-slate-500 font-mono">
+                              via {p.source_sale.code}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm text-slate-900">
+                            {p.landbases?.name ?? '—'}
+                          </div>
+                          {p.landbases?.country ? (
+                            <div className="text-xs text-slate-500">
+                              {p.landbases.country}
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                     </td>
-                    <td className="px-6 py-3 text-slate-800">
-                      <div>{p.landbases?.name ?? '—'}</div>
-                      {p.landbases?.country ? (
-                        <div className="text-xs text-slate-500">
-                          {p.landbases.country}
-                        </div>
-                      ) : null}
+                    <td className="px-6 py-3 text-slate-600">
+                      {formatDate(p.purchase_date)}
                     </td>
-                    {isAdmin ? (
-                      <td className="px-6 py-3 text-slate-700">
-                        {p.organizations?.name ?? '—'}
-                      </td>
-                    ) : null}
-                    <td className="px-6 py-3 text-slate-500">
-                      {fmtDate(p.purchase_date)}
+                    <td className="px-6 py-3">
+                      {Number(p.volume)} {p.volume_unit ?? 'tonnes'}
                     </td>
-                    <td className="px-6 py-3 text-right text-slate-900">
-                      {fmtNumber(Number(p.volume))} {p.volume_unit}
+                    <td className="px-6 py-3">
+                      {Number(p.volume_remaining)} {p.volume_unit ?? 'tonnes'}
                     </td>
-                    <td className="px-6 py-3 text-right">
-                      <span
-                        className={
-                          Number(p.volume_remaining) <= 0
-                            ? 'text-slate-400'
-                            : 'text-slate-900'
-                        }
-                      >
-                        {fmtNumber(Number(p.volume_remaining))} {p.volume_unit}
-                      </span>
+                    <td className="px-6 py-3">
+                      {p.fibre_diameter ? `${p.fibre_diameter} µm` : '—'}
                     </td>
-                    <td className="px-6 py-3 text-right text-slate-700">
-                      {p.fibre_diameter ? `${fmtNumber(Number(p.fibre_diameter), 1)} µm` : '—'}
-                    </td>
-                    <td className="px-6 py-3 text-right text-slate-700">
-                      {p.year_of_clip ?? '—'}
-                    </td>
-                    <td className="px-6 py-3 text-right">
-                      {originCert ? (
+                    <td className="px-6 py-3">{p.year_of_clip ?? '—'}</td>
+                    <td className="px-6 py-3">
+                      {isReceived && tcId ? (
                         <Link
-                          href={`/certificates/${originCert.id}`}
-                          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#063359]"
-                          title="Open the origin certificate for this purchase"
+                          href={`/certificates/${tcId}`}
+                          className="text-[#063359] hover:underline"
                         >
-                          <svg
-                            className="h-3.5 w-3.5"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            aria-hidden="true"
-                          >
-                            <path d="M11 3a1 1 0 1 0 0 2h2.586l-6.293 6.293a1 1 0 1 0 1.414 1.414L15 6.414V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z" />
-                            <path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z" />
-                          </svg>
-                          View certificate
+                          View transaction cert
+                        </Link>
+                      ) : !isReceived && ocId ? (
+                        <Link
+                          href={`/certificates/${ocId}`}
+                          className="text-[#063359] hover:underline"
+                        >
+                          View origin cert
                         </Link>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
                   </tr>
@@ -254,33 +235,13 @@ export default async function PurchasesPage({ searchParams }: PageProps) {
               })}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
 
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-slate-500">
         Rows above are filtered by Row-Level Security. A member of a different
         organization would see only their own purchases.
       </p>
-    </div>
-  )
-}
-
-function SummaryCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string
-  value: string
-  hint?: string
-}) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-semibold text-slate-900">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
     </div>
   )
 }
