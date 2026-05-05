@@ -114,9 +114,7 @@ export default async function SalesPage() {
             <tbody>
               {list.map((s) => {
                 const certId = s.certificates?.[0]?.id
-                const buyerLabel = s.buyer_org?.name
-                  ? `${s.buyer_org.name} (platform)`
-                  : `${s.buyer_name} (external)`
+                const buyerLabel = s.buyer_org?.name ?? s.buyer_name
                 return (
                   <tr key={s.id} className="border-t border-slate-100">
                     <td className="px-6 py-3 font-mono text-xs">{s.code}</td>
