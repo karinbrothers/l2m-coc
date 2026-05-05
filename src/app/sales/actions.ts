@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
+import { notifySaleArrived } from '@/lib/email/notifications'
 
 const DEFAULT_RESPONSE_DAYS = 14
 
@@ -21,9 +22,10 @@ export async function generateNextSaleCode(): Promise<string> {
 /**
  * Record a sale to a platform partner. Sale starts in 'pending' status;
  * the buyer accepts or rejects from /inbox. TC issues on acceptance.
+ * Buyer org gets a transactional email notification.
  */
 export async function createSale(formData: FormData) {
-  await requireUser()
+  const user = await requireUser()
   const supabase = await createClient()
 
   const inventoryLotId = String(formData.get('inventory_lot_id') ?? '').trim()
@@ -78,7 +80,29 @@ export async function createSale(formData: FormData) {
   }
 
   // TC is NOT issued here — it's issued when the buyer accepts the sale
-  // in /inbox. See acceptSale in src/app/inbox/actions.ts (Block 3).
+  // in /inbox. See acceptSale in src/app/inbox/actions.ts.
+
+  // Notify the buyer org via email
+  const [sellerOrgRes, lotRes] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select('name')
+      .eq('id', user.organization_id)
+      .maybeSingle(),
+    supabase
+      .from('inventory_lots')
+      .select('product_name')
+      .eq('id', inventoryLotId)
+      .maybeSingle(),
+  ])
+
+  await notifySaleArrived(supabase, {
+    saleCode: code,
+    sellerOrgName: sellerOrgRes.data?.name ?? 'a partner',
+    buyerOrgId: buyerOrgId,
+    volume,
+    productName: lotRes.data?.product_name ?? null,
+  })
 
   revalidatePath('/sales')
   revalidatePath('/inventory')
@@ -89,6 +113,11 @@ export async function createSale(formData: FormData) {
  * Issue a Transaction Certificate for an accepted sale. Called from the
  * inbox accept flow. Walks: lot → batch → batch_inputs → raw_purchases →
  * origin certs, attributes volume proportionally, inserts TC + links.
+ *
+ * NOTE: As of migration 22, TC issuance is handled server-side inside
+ * the accept_sale SECURITY DEFINER RPC (issue_tc_for_sale). This JS
+ * function is preserved for backwards compatibility but no longer the
+ * primary path.
  */
 export async function issueTransactionCertificate(
   supabase: Awaited<ReturnType<typeof createClient>>,
