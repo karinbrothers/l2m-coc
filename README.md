@@ -417,3 +417,81 @@ constraints.
   L2M user can verify a sale) — currently auth-gated only.
 - `@page` CSS rules to clean up browser-injected headers/footers on the
   printed PDF.
+
+  ### Day 17 — Multi-stage chain of custody: receiving partners
+
+**Goal:** Make the platform actually work as a real multi-stage supply
+chain. Each partner — first-stage processor or downstream — treats
+their incoming material (whether direct from a landbase or received via
+accepted sale) as their "unprocessed inventory" until they process it
+themselves. Then they sell the result onward, where the chain repeats.
+
+**Schema migrations:**
+
+- `24_buyer_acquisition.sql` (REVERTED): first attempt added
+  `received_from_sale_id` to `inventory_lots`. Wrong abstraction —
+  received material then showed up under "Processed" on the buyer's
+  inventory, but from the buyer's POV it's raw input awaiting their own
+  processing. Reverted in 25.
+
+- `25_received_as_raw_purchases.sql` — correct model:
+  - `raw_material_purchases.landbase_id` is now nullable
+  - New `raw_material_purchases.source_sale_id` column links a received
+    raw purchase back to the upstream sale
+  - `accept_sale` RPC inserts a buyer-side `raw_material_purchases` row
+    when buyer accepts (instead of an inventory_lot)
+  - `issue_tc_for_sale` walks recursively:
+    - Case A: direct purchases (landbase_id set) → link straight to
+      their OC
+    - Case B: received purchases (source_sale_id set) → walk to the
+      source sale's TC's origin links, attributing volumes
+      proportionally so the chain back to landbase OCs is preserved
+      across orgs
+  - Backfill section regenerates received purchases for any
+    previously-accepted sales
+  - Drops the abandoned `received_from_sale_id` column from
+    `inventory_lots`
+
+**Code changes:**
+- `src/app/purchases/page.tsx` — unified view showing both direct (from
+  landbase, with OC link) and received (from accepted sale, with TC
+  link). Source column adapts based on `source_sale_id` presence;
+  summary shows "N direct · M received" breakdown.
+- `src/app/inventory/page.tsx` — small touch-up: received material
+  shows "Received from <seller>" instead of "—" in the landbase column.
+- `src/app/inbox/page.tsx` — added "Verify upstream provenance →" link
+  on each pending sale card. Opens `/trace/<sale_code>` in a new tab so
+  buyer can inspect the full chain (lot, batch, source landbases) BEFORE
+  accepting.
+- `src/app/sales/page.tsx` — scoped to user's own org outgoing sales
+  only. Incoming sales live in `/inbox`, not `/sales`.
+
+**Bugs hit and resolved (still part of today's session):**
+- `/sales` went empty for admin after a migration 22 clause added a
+  buyer-OC-chain branch to `certs_select` that referenced `certificates`
+  back inside its own EXISTS subquery. PostgreSQL RLS doesn't
+  gracefully short-circuit OR clauses with self-referencing
+  `certificates` joins; nested `certificates!related_transaction_id`
+  select on `/sales` returned 0 rows. Fixed in **migration 23** by
+  moving the buyer-OC-chain check into a SECURITY DEFINER helper
+  function `is_buyer_for_oc_in_chain` that bypasses RLS internally, so
+  the outer policy stays flat.
+- `/sales/new` dropdown showed inventory lots from all orgs (admin
+  RLS), but `record_sale` only allows selling from your own org's lots
+  — submission failed with `lot_not_found`. Fixed by filtering the
+  dropdown query to `organization_id = user.organization_id`.
+
+**Open / deferred:**
+- Recursive trace function (`get_trace_by_sale_code`) currently shows
+  only the immediate upstream chain. Walking back through multiple
+  `source_sale_id` hops requires a recursive CTE. Day 18+.
+- Inline source-materials preview on `/inbox` card (rather than
+  requiring a click through to `/trace`). Day 18+.
+- Role-based access — only first-stage processors should be able to use
+  `/purchases/new` directly. Not enforced yet; needs an
+  `is_first_stage` flag on organizations or to derive it from supply
+  groups.
+- Email notifications when a sale arrives (deferred from Day 16).
+- `/processing/new` form should let partners use `inventory_lots` as
+  inputs (the schema supports `source_type='inventory_lot'`); UI
+  currently only exposes raw purchases.
