@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import { acceptSale, rejectSale } from './actions'
@@ -168,6 +169,19 @@ export default async function InboxPage({ searchParams }: PageProps) {
                       <span className="text-xs uppercase text-slate-500">Seller notes:</span> {s.notes}
                     </div>
                   ) : null}
+                  <div className="mt-3">
+                    <Link
+                      href={`/trace/${s.code}`}
+                      target="_blank"
+                      className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
+                      style={{ color: '#063359' }}
+                    >
+                      Verify upstream provenance →
+                    </Link>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Click to see the full chain (lot, processing batch, source landbases) before deciding.
+                    </p>
+                  </div>
                 </div>
               </div>
               <form className="mt-4 space-y-3 border-t border-slate-100 pt-4">
