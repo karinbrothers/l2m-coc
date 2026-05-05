@@ -62,6 +62,7 @@ export default async function RootLayout({
               <Link href="/inventory" className={linkClass}>Inventory</Link>
               <Link href="/processing" className={linkClass}>Processing</Link>
               <Link href="/sales" className={linkClass}>Sales</Link>
+              <Link href="/inbox" className={linkClass}>Inbox</Link>
               <Link href="/partner-requests" className={linkClass}>Partner Requests</Link>
               <Link href="/certificates" className={linkClass}>Certificates</Link>
               {isAdmin ? (
