@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import { createSale } from '../actions'
@@ -41,6 +42,17 @@ export default async function NewSalePage({ searchParams }: PageProps) {
   const { error } = await searchParams
   const supabase = await createClient()
 
+  // Final brands don't sell onward — bounce them back
+  const { data: myOrg } = await supabase
+    .from('organizations')
+    .select('is_final_brand')
+    .eq('id', user.organization_id)
+    .maybeSingle()
+
+  if (myOrg?.is_final_brand) {
+    redirect('/sales?error=final_brand')
+  }
+
   const [lotsRes, orgsRes] = await Promise.all([
     supabase
       .from('inventory_lots')
@@ -49,10 +61,13 @@ export default async function NewSalePage({ searchParams }: PageProps) {
       .gt('volume_remaining', 0)
       .order('code', { ascending: true })
       .returns<AvailableLot[]>(),
+    // Buyers can be mid-stream processors or final brands, but never
+    // first-stage processors (those only source from landbases)
     supabase
       .from('organizations')
       .select('id, name')
       .neq('id', user.organization_id)
+      .eq('is_first_stage_processor', false)
       .order('name', { ascending: true })
       .returns<Org[]>(),
   ])
@@ -84,7 +99,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
 
       {options.length === 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No inventory lots with remaining volume. Process a raw purchase first.
+          No inventory lots with remaining volume. Process unprocessed material first.
         </div>
       ) : (
         <form
