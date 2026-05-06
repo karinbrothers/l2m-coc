@@ -56,18 +56,16 @@ export default async function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <div className="flex min-h-screen">
           <aside className="w-56 flex flex-col bg-[#063359] p-4 print:hidden">
-            <div className="mb-6 flex items-center gap-3">
+            <div className="mb-6 px-2">
               <Image
                 src="/l2m-logo-white.svg"
                 alt="Land to Market"
-                width={48}
-                height={48}
+                width={120}
+                height={120}
                 priority
+                className="h-auto w-28"
               />
-              <div>
-                <h1 className="text-lg font-bold text-white leading-tight">L2M CoC</h1>
-                <p className="text-xs text-slate-300 leading-tight">Chain of Custody</p>
-              </div>
+              <p className="mt-2 text-xs text-slate-300">Chain of Custody</p>
             </div>
             <nav className="space-y-1 flex-1">
               <Link href="/" className={linkClass}>Dashboard</Link>
