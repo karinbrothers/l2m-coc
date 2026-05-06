@@ -665,3 +665,50 @@ the actions that apply to their role in the chain.
   non-wool commodities.
 - **Dashboard rebuild** — useful home page (volume in flight, recent
   activity, low inventory). Day 20.
+
+
+  ### Day 20 — Salesforce-driven supply chain stage
+
+**Goal:** Move partner-stage classification (first-stage processor /
+middle-stage / final-stage / final brand) into Salesforce as the source
+of truth, replacing the admin-managed booleans from Day 19.
+
+**Salesforce side:**
+- Created a new field on Account: `Supply_Chain_Stage__c` (picklist:
+  First Stage Processor / Middle Stage Processor / Final Stage Processor
+  / Final Brand).
+
+**Schema migration:**
+- `30_supply_chain_stage.sql`:
+  - Added `supply_chain_stage` (text, with check constraint) on
+    `organizations`.
+  - Backfilled from existing `is_first_stage_processor` and
+    `is_final_brand` booleans so nothing existing breaks.
+  - Added `sync_org_stage_flags` trigger that auto-updates the two
+    booleans whenever `supply_chain_stage` changes (insert or update).
+    The booleans become derived columns; the stage is the source of
+    truth.
+
+**Code changes:**
+- `src/lib/salesforce/sync.ts` — added `Supply_Chain_Stage__c` to the
+  `SalesforceAccount` interface, the SOQL SELECT clause in
+  `syncOrganizationsPass`, and the `base` payload written into
+  `organizations`. The DB trigger handles deriving the booleans on
+  every sync write, so existing UI gating code (which reads the
+  booleans) keeps working without changes.
+
+**Verification:**
+- Set `Supply_Chain_Stage__c` on Engraw, Suedwolle, and Kering in
+  Salesforce; ran the sync; confirmed the org rows show:
+  - Engraw: First Stage Processor → first_stage=true, brand=false
+  - Suedwolle: Middle Stage Processor → both flags false
+  - Kering: Final Brand → first_stage=false, brand=true
+- Ituzaingó's stage pending coworker confirmation; will sync once set.
+
+**Open / deferred:**
+- Admin invite UI could surface the stage at invite time as a
+  read-only display (since it's Salesforce-driven now). Low priority.
+- Eligibility report URL link on origin certs — schema and code in
+  place but most landbases don't have the URL populated in Salesforce.
+- Dashboard rebuild.
+- Resend domain verification + Supabase Pro for production-ready email.
