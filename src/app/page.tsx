@@ -20,6 +20,36 @@ type ProfileRow = {
   organizations: OrgRow | null
 }
 
+type ActivityRow = {
+  type: 'purchase' | 'received' | 'batch' | 'sale_sent' | 'sale_accepted' | 'sale_rejected'
+  timestamp: string
+  title: string
+  subtitle: string | null
+  href: string
+}
+
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const days = Math.floor(ms / (1000 * 60 * 60 * 24))
+  if (days === 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 7) return `${days} days ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`
+  return `${Math.floor(days / 365)}y ago`
+}
+
+function activityIcon(type: ActivityRow['type']): string {
+  switch (type) {
+    case 'purchase':       return '🌱'
+    case 'received':       return '📦'
+    case 'batch':          return '🏭'
+    case 'sale_sent':      return '📤'
+    case 'sale_accepted':  return '✅'
+    case 'sale_rejected':  return '❌'
+  }
+}
+
 export default async function Home() {
   const supabase = await createClient()
   const {
@@ -48,7 +78,6 @@ export default async function Home() {
   const isFinalBrand = profile?.organizations?.is_final_brand ?? false
 
   // ─── Stats queries ────────────────────────────────────────
-  // Action items: incoming pending sales
   const actionItemsPromise = orgId
     ? supabase
         .from('sales')
@@ -57,7 +86,6 @@ export default async function Home() {
         .eq('status', 'pending')
     : Promise.resolve({ count: 0 } as { count: number | null })
 
-  // Unprocessed inventory: sum of volume_remaining on raw_material_purchases
   const unprocessedPromise = orgId
     ? supabase
         .from('raw_material_purchases')
@@ -65,7 +93,6 @@ export default async function Home() {
         .eq('organization_id', orgId)
     : Promise.resolve({ data: [] } as { data: { volume_remaining: number; volume: number }[] })
 
-  // Processed inventory: sum of volume_remaining on inventory_lots
   const processedPromise = orgId
     ? supabase
         .from('inventory_lots')
@@ -73,7 +100,6 @@ export default async function Home() {
         .eq('organization_id', orgId)
     : Promise.resolve({ data: [] } as { data: { volume_remaining: number }[] })
 
-  // Outgoing pending: count of sales sent and awaiting buyer
   const outgoingPendingPromise = orgId
     ? supabase
         .from('sales')
@@ -105,6 +131,162 @@ export default async function Home() {
     (procRes as { data: { volume_remaining: number }[] | null }).data ?? []
   ).reduce((s, r) => s + Number(r.volume_remaining ?? 0), 0)
   const outgoingPendingCount = outgoingRes.count ?? 0
+
+  // ─── Activity feed queries ────────────────────────────────
+  const activity: ActivityRow[] = []
+
+  if (orgId) {
+    const [purchasesAct, batchesAct, salesSentAct, salesReceivedAct] =
+      await Promise.all([
+        supabase
+          .from('raw_material_purchases')
+          .select(
+            'id, code, volume, volume_unit, purchase_date, source_sale_id, landbases:landbase_id(name), source_sale:sales!source_sale_id(seller_org:organization_id(name))',
+          )
+          .eq('organization_id', orgId)
+          .order('purchase_date', { ascending: false })
+          .limit(5),
+        supabase
+          .from('processing_batches')
+          .select('id, output_product, output_volume, processing_date')
+          .eq('organization_id', orgId)
+          .order('processing_date', { ascending: false })
+          .limit(5),
+        supabase
+          .from('sales')
+          .select(
+            'id, code, volume, volume_unit, sale_date, status, accepted_at, rejected_at, buyer_org:buyer_org_id(name)',
+          )
+          .eq('organization_id', orgId)
+          .order('sale_date', { ascending: false })
+          .limit(5),
+        supabase
+          .from('sales')
+          .select(
+            'id, code, volume, volume_unit, sale_date, status, accepted_at, rejected_at, seller_org:organization_id(name)',
+          )
+          .eq('buyer_org_id', orgId)
+          .order('sale_date', { ascending: false })
+          .limit(5),
+      ])
+
+    for (const p of (purchasesAct.data ?? []) as Array<{
+      id: string
+      code: string
+      volume: number
+      volume_unit: string | null
+      purchase_date: string
+      source_sale_id: string | null
+      landbases: { name: string } | null
+      source_sale: { seller_org: { name: string } | null } | null
+    }>) {
+      const isReceived = !!p.source_sale_id
+      activity.push({
+        type: isReceived ? 'received' : 'purchase',
+        timestamp: p.purchase_date,
+        title: isReceived
+          ? `Received ${Number(p.volume)} ${p.volume_unit ?? 't'} from ${p.source_sale?.seller_org?.name ?? 'a partner'}`
+          : `Purchased ${Number(p.volume)} ${p.volume_unit ?? 't'} from ${p.landbases?.name ?? 'a landbase'}`,
+        subtitle: p.code,
+        href: '/purchases',
+      })
+    }
+
+    for (const b of (batchesAct.data ?? []) as Array<{
+      id: string
+      output_product: string
+      output_volume: number
+      processing_date: string
+    }>) {
+      activity.push({
+        type: 'batch',
+        timestamp: b.processing_date,
+        title: `Processed batch — ${Number(b.output_volume)} t of ${b.output_product}`,
+        subtitle: null,
+        href: '/processing',
+      })
+    }
+
+    for (const s of (salesSentAct.data ?? []) as Array<{
+      id: string
+      code: string
+      volume: number
+      volume_unit: string | null
+      sale_date: string
+      status: string
+      accepted_at: string | null
+      rejected_at: string | null
+      buyer_org: { name: string } | null
+    }>) {
+      const buyer = s.buyer_org?.name ?? 'a partner'
+      const vol = `${Number(s.volume)} ${s.volume_unit ?? 't'}`
+      if (s.status === 'accepted' && s.accepted_at) {
+        activity.push({
+          type: 'sale_accepted',
+          timestamp: s.accepted_at,
+          title: `${buyer} accepted ${vol}`,
+          subtitle: s.code,
+          href: '/sales',
+        })
+      } else if (s.status === 'rejected' && s.rejected_at) {
+        activity.push({
+          type: 'sale_rejected',
+          timestamp: s.rejected_at,
+          title: `${buyer} rejected ${vol}`,
+          subtitle: s.code,
+          href: '/sales',
+        })
+      } else {
+        activity.push({
+          type: 'sale_sent',
+          timestamp: s.sale_date,
+          title: `Sent ${vol} to ${buyer}`,
+          subtitle: s.code,
+          href: '/sales',
+        })
+      }
+    }
+
+    for (const s of (salesReceivedAct.data ?? []) as Array<{
+      id: string
+      code: string
+      volume: number
+      volume_unit: string | null
+      sale_date: string
+      status: string
+      accepted_at: string | null
+      rejected_at: string | null
+      seller_org: { name: string } | null
+    }>) {
+      if (s.status === 'pending') continue
+      const seller = s.seller_org?.name ?? 'a partner'
+      const vol = `${Number(s.volume)} ${s.volume_unit ?? 't'}`
+      if (s.status === 'accepted' && s.accepted_at) {
+        activity.push({
+          type: 'sale_accepted',
+          timestamp: s.accepted_at,
+          title: `Accepted ${vol} from ${seller}`,
+          subtitle: s.code,
+          href: '/inbox',
+        })
+      } else if (s.status === 'rejected' && s.rejected_at) {
+        activity.push({
+          type: 'sale_rejected',
+          timestamp: s.rejected_at,
+          title: `Rejected ${vol} from ${seller}`,
+          subtitle: s.code,
+          href: '/inbox',
+        })
+      }
+    }
+
+    activity.sort(
+      (a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    )
+  }
+
+  const recentActivity = activity.slice(0, 10)
 
   // ─── Render ───────────────────────────────────────────────
   return (
@@ -242,11 +424,8 @@ export default async function Home() {
         )}
       </div>
 
-      {/* Quick actions — hidden if user has no available actions */}
-      {(isFirstStage ||
-        !isFinalBrand ||
-        actionItemsCount > 0 ||
-        isAdmin) ? (
+      {/* Quick actions */}
+      {(isFirstStage || !isFinalBrand || actionItemsCount > 0 || isAdmin) ? (
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
             Quick actions
@@ -279,14 +458,45 @@ export default async function Home() {
         </div>
       ) : null}
 
-      {/* Recent activity feed coming in Block 2 */}
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-          Recent activity
-        </h3>
-        <p className="mt-2 text-sm text-slate-500">
-          Activity feed coming next.
-        </p>
+      {/* Recent activity feed */}
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+            Recent activity
+          </h3>
+        </div>
+        {recentActivity.length === 0 ? (
+          <p className="px-6 py-6 text-sm text-slate-500">
+            No activity yet. Once your organization records purchases, batches,
+            or sales, they&apos;ll appear here.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {recentActivity.map((event, idx) => (
+              <li key={`${event.type}-${event.timestamp}-${idx}`}>
+                <Link
+                  href={event.href}
+                  className="flex items-start gap-3 px-6 py-3 hover:bg-slate-50"
+                >
+                  <span className="text-lg leading-none mt-0.5">
+                    {activityIcon(event.type)}
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-sm text-slate-900">{event.title}</div>
+                    {event.subtitle ? (
+                      <div className="font-mono text-xs text-slate-500">
+                        {event.subtitle}
+                      </div>
+                    ) : null}
+                  </div>
+                  <span className="text-xs text-slate-500 whitespace-nowrap">
+                    {relativeTime(event.timestamp)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )
