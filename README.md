@@ -608,3 +608,60 @@ landbase (Agua Dulce, Uruguay) regardless of hop position.
   lots as inputs (schema supports it; UI doesn't).
 - Production hardening: error states, mobile responsive audit,
   rate-limited destructive actions.
+
+  ### Day 19 — Org-stage gating + wording polish
+
+**Goal:** Differentiate partner types in the UI so each org sees only
+the actions that apply to their role in the chain.
+- First-stage processors (e.g. Engraw) buy directly from landbases.
+- Mid-stream processors (e.g. Ituzaingó, Suedwolle) only receive
+  material via accepted sales — they don't make direct purchases.
+- Final brands (e.g. Kering) accept incoming material but never
+  process or sell onward.
+
+**Schema migration:**
+- `29_first_stage_processor.sql` — added two boolean flags to
+  `organizations`: `is_first_stage_processor` and `is_final_brand`.
+  Both default to false. Set Engraw = true for first-stage and Kering
+  = true for final brand. Both flags are admin-managed for now;
+  Salesforce-sync mapping deferred to Day 20+.
+
+**Code changes:**
+- `src/app/purchases/new/page.tsx` — early redirect to `/purchases?error=not_first_stage`
+  if the user's org is not a first-stage processor.
+- `src/app/purchases/page.tsx` — hides "+ New purchase" button for
+  non-first-stage orgs; shows an explanatory amber banner when the
+  redirect lands; empty-state copy adapts to the partner type.
+- `src/app/sales/new/page.tsx` — early redirect to `/sales?error=final_brand`
+  if the user's org is a final brand. Also filtered the buyer dropdown
+  to exclude first-stage processors (those only source from landbases,
+  not from other partners).
+- `src/app/sales/page.tsx` — hides "+ New sale" button for final brands,
+  description and empty-state copy adapt for brands, amber banner on
+  redirect.
+- `src/app/layout.tsx` — Sales and Processing nav entries hidden for
+  final brands. Brands see Dashboard / Landbases / Purchases /
+  Inventory / Inbox / Partner Requests / Certificates.
+
+**Wording sweep:**
+- "Raw material" / "raw purchase" / "raw" → "unprocessed material" /
+  "source" / "unprocessed" across all user-facing strings (page
+  descriptions, empty states, error messages). Internal variable
+  names and the `raw_material_purchases` DB table name preserved —
+  rename would be invasive and the table-as-data-store reflects the
+  Day-1 schema intent (raw-from-landbase) even though the table now
+  also holds received material.
+
+**Open / deferred:**
+- **Salesforce sync mapping** for `is_first_stage_processor` and
+  `is_final_brand`. Currently admin-managed via SQL; should pull
+  from a Salesforce field like `Partner_Stage__c` (enum: first_stage
+  / processor / brand). Day 20+ work.
+- **Admin invite UI** could include an org-stage dropdown so admins
+  set this at invite time. Same Day-20 batch.
+- **Multi-step processing within one org** (e.g. dairy/meat use cases
+  Karin mentioned) — schema supports it via `processing_batch_inputs.source_type =
+  'inventory_lot'`; UI doesn't expose it. Defer until needed for
+  non-wool commodities.
+- **Dashboard rebuild** — useful home page (volume in flight, recent
+  activity, low inventory). Day 20.
