@@ -43,7 +43,7 @@ export default async function RootLayout({
       .eq("id", user.id)
       .maybeSingle();
     userRole = profile?.role ?? null;
-    const org = profile?.organization as { is_final_brand: boolean } | null;
+    const org = profile?.organization as unknown as { is_final_brand: boolean } | null;
     isFinalBrand = org?.is_final_brand ?? false;
   }
 
