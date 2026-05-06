@@ -712,3 +712,50 @@ of truth, replacing the admin-managed booleans from Day 19.
   place but most landbases don't have the URL populated in Salesforce.
 - Dashboard rebuild.
 - Resend domain verification + Supabase Pro for production-ready email.
+
+### Day 21 — Dashboard rebuild + brand polish
+
+**Goal:** Replace the placeholder home page with something genuinely
+useful. Each user lands on a dashboard that reflects their org and stage.
+
+**Code changes:**
+- `src/app/page.tsx` — full rebuild:
+  - Welcome banner with name, org, supply chain stage, role.
+  - **Regenerative impact hero** — emerald-tinted card showing lifetime
+    tonnes of material from regenerating landbases that has moved
+    through the org.
+  - **4 stats cards** — Action items / Unprocessed / Processed /
+    Outgoing pending. Each links to the relevant page. Action items
+    goes amber when > 0. Final brands see "Certificates received"
+    instead of "Processed" and a disabled "Outgoing" placeholder.
+  - **Quick actions row** — adapts to stage. First-stage gets
+    `+ New purchase`. Mid-stage gets `+ New batch / + New sale`.
+    Final brands see only the inbox button (when they have action
+    items). Admins also see "Manage invitations." Section hidden
+    entirely if user has no actions available.
+  - **Recent activity feed** — unified time-sorted feed of the last 10
+    events for the user's org: 🌱 purchases, 📦 received material,
+    🏭 processing batches, 📤 sales sent, ✅ acceptances, ❌ rejections.
+    Pulls from raw_material_purchases, processing_batches, and
+    sales (both sides) and merges in JS.
+- `src/app/layout.tsx` — sidebar restyled:
+  - Navy (`#063359`) background.
+  - White Land-to-Market logo (combined "Chain of Custody" SVG asset
+    in `public/chain-of-custody-logo.svg`).
+  - Light-on-dark link styling with darker-navy hover.
+  - Admin section divider with **Salesforce sync** link added next
+    to **Invitations**.
+
+**TypeScript fixes:**
+- `as unknown as Array<...>` double-cast pattern applied to nested
+  PostgREST joins (Supabase auto-generated types treat nested
+  one-to-one joins as arrays even when they're single objects).
+  Matches the fix we already used in layout.tsx.
+
+**Open / deferred:**
+- Admin platform-wide stats variation on the dashboard (currently
+  admin sees their own LtM org's data, which is mostly zero).
+- Dashboard could include a "supplier map" or "buyers list" for
+  brands. Day 22+.
+- Recent activity feed could include processing-batch detail rows;
+  currently summary only.
