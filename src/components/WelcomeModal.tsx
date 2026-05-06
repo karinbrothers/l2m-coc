@@ -187,10 +187,8 @@ function deriveStage(org: OrgRow): Stage {
   if (text === 'final_stage_processor') return 'final_stage_processor'
   if (text === 'final_brand') return 'final_brand'
 
-  // Fallback to booleans
   if (org?.is_final_brand) return 'final_brand'
   if (org?.is_first_stage_processor) return 'first_stage_processor'
-  // Anyone else with no stage info is treated as a middle-stage processor
   return 'middle_stage_processor'
 }
 
@@ -213,16 +211,8 @@ function fspSteps(org: string): Step[] {
       title: `Welcome${org ? `, ${org}` : ''}.`,
       body: (
         <>
-          <p>
-            You&apos;re set up as a <strong>First Stage Processor</strong>.
-            Your role in the L2M chain of custody is to record verified
-            wool you&apos;ve purchased from regenerating landbases and
-            move it forward to your buyers with full traceability.
-          </p>
-          <p className="mt-3">
-            This quick tour will show you the four things you&apos;ll do
-            most often.
-          </p>
+          <p>You&apos;re set up as a <strong>First Stage Processor</strong>. Your role in the L2M chain of custody is to record verified wool you&apos;ve purchased from regenerating landbases and move it forward to your buyers with full traceability.</p>
+          <p className="mt-3">This quick tour will show you the four things you&apos;ll do most often.</p>
         </>
       ),
     },
@@ -230,17 +220,8 @@ function fspSteps(org: string): Step[] {
       title: 'Record purchases from landbases',
       body: (
         <>
-          <p>
-            Every batch starts with a <strong>purchase</strong> from
-            a verified landbase. Landbases are pulled directly from
-            Salesforce, so you only see the ones you&apos;re approved
-            to buy from.
-          </p>
-          <p className="mt-3">
-            Record volume, transaction date, and reference number
-            and the system creates an <strong>origin certificate</strong>
-            automatically.
-          </p>
+          <p>Every batch starts with a <strong>purchase</strong> from a verified landbase. Landbases are pulled directly from Salesforce, so you only see the ones you&apos;re approved to buy from.</p>
+          <p className="mt-3">Record volume, transaction date, and reference number, and the system creates an <strong>origin certificate</strong> automatically.</p>
         </>
       ),
       cta: { label: 'Open Purchases', href: '/purchases' },
@@ -248,43 +229,21 @@ function fspSteps(org: string): Step[] {
     {
       title: 'Process into batches',
       body: (
-        <>
-          <p>
-            Combine one or more purchases into a <strong>processed
-            batch</strong>. Volumes are tracked automatically &mdash;
-            you can&apos;t process more than you&apos;ve purchased,
-            so the chain stays mass-balanced end to end.
-          </p>
-        </>
+        <p>Combine one or more purchases into a <strong>processed batch</strong>. Volumes are tracked automatically — you can&apos;t process more than you&apos;ve purchased, so the chain stays mass-balanced end to end.</p>
       ),
       cta: { label: 'Open Processing', href: '/processing' },
     },
     {
       title: 'Sell onward',
       body: (
-        <>
-          <p>
-            Log a <strong>sale</strong> to your buyer. They&apos;ll
-            get an invitation to accept it. Once accepted, a
-            <strong> transaction certificate</strong> is issued
-            automatically, carrying every origin certificate down
-            the chain.
-          </p>
-        </>
+        <p>Log a <strong>sale</strong> to your buyer. They&apos;ll get an invitation to accept it. Once accepted, a <strong>transaction certificate</strong> is issued automatically, carrying every origin certificate down the chain.</p>
       ),
       cta: { label: 'Open Sales', href: '/sales' },
     },
     {
       title: 'You’re set.',
       body: (
-        <>
-          <p>
-            Your <strong>dashboard</strong> shows action items, stock
-            levels, and recent activity. If you ever want to revisit
-            this tour, open <Link href="/help" className="text-[#063359] underline">Help</Link>{' '}
-            from the sidebar.
-          </p>
-        </>
+        <p>Your <strong>dashboard</strong> shows action items, stock levels, and recent activity. If you ever want to revisit this tour, open <Link href="/help" className="text-[#063359] underline">Help</Link> from the sidebar.</p>
       ),
     },
   ]
@@ -295,71 +254,34 @@ function middleSteps(org: string): Step[] {
     {
       title: `Welcome${org ? `, ${org}` : ''}.`,
       body: (
-        <>
-          <p>
-            You&apos;re a processor in the middle of the L2M chain.
-            Verified wool will arrive from your upstream partner;
-            you&apos;ll process it and sell it onward to the next
-            stage. The chain of custody follows the wool the entire
-            way.
-          </p>
-        </>
+        <p>You&apos;re a processor in the middle of the L2M chain. Verified wool will arrive from your upstream partner; you&apos;ll process it and sell it onward to the next stage. The chain of custody follows the wool the entire way.</p>
       ),
     },
     {
       title: 'Check your inbox',
       body: (
-        <>
-          <p>
-            When an upstream partner sells to you, it appears in
-            your <strong>Inbox</strong>. Before you accept, you can
-            preview the full upstream chain &mdash; back to the
-            original landbases &mdash; so you know exactly what
-            you&apos;re receiving.
-          </p>
-        </>
+        <p>When an upstream partner sells to you, it appears in your <strong>Inbox</strong>. Before you accept, you can preview the full upstream chain — back to the original landbases — so you know exactly what you&apos;re receiving.</p>
       ),
       cta: { label: 'Open Inbox', href: '/inbox' },
     },
     {
       title: 'Process into batches',
       body: (
-        <>
-          <p>
-            Once accepted, the wool joins your stock. Combine
-            purchases into <strong>processed batches</strong> as
-            normal &mdash; the system carries every origin
-            certificate forward automatically.
-          </p>
-        </>
+        <p>Once accepted, the wool joins your stock. Combine purchases into <strong>processed batches</strong> as normal — the system carries every origin certificate forward automatically.</p>
       ),
       cta: { label: 'Open Processing', href: '/processing' },
     },
     {
       title: 'Sell onward',
       body: (
-        <>
-          <p>
-            Log a sale to your downstream buyer. Origin certificates
-            <strong> accumulate</strong> down the chain &mdash; the
-            final brand will see provenance for every landbase that
-            contributed to their order.
-          </p>
-        </>
+        <p>Log a sale to your downstream buyer. Origin certificates <strong>accumulate</strong> down the chain — the final brand will see provenance for every landbase that contributed to their order.</p>
       ),
       cta: { label: 'Open Sales', href: '/sales' },
     },
     {
       title: 'You’re set.',
       body: (
-        <>
-          <p>
-            Watch your <strong>dashboard</strong> for action items.
-            If you want to revisit this tour, open{' '}
-            <Link href="/help" className="text-[#063359] underline">Help</Link>{' '}
-            from the sidebar anytime.
-          </p>
-        </>
+        <p>Watch your <strong>dashboard</strong> for action items. If you want to revisit this tour, open <Link href="/help" className="text-[#063359] underline">Help</Link> from the sidebar anytime.</p>
       ),
     },
   ]
@@ -371,73 +293,36 @@ function brandSteps(org: string): Step[] {
       title: `Welcome${org ? `, ${org}` : ''}.`,
       body: (
         <>
-          <p>
-            You&apos;re here as a <strong>brand</strong>. This is
-            where verified wool arrives at your door &mdash; with
-            full provenance back to the regenerating landbases it
-            came from.
-          </p>
-          <p className="mt-3">
-            A quick tour of the four things you&apos;ll do most.
-          </p>
+          <p>You&apos;re here as a <strong>brand</strong>. This is where verified wool arrives at your door — with full provenance back to the regenerating landbases it came from.</p>
+          <p className="mt-3">A quick tour of the four things you&apos;ll do most.</p>
         </>
       ),
     },
     {
       title: 'Verified wool arrives in your inbox',
       body: (
-        <>
-          <p>
-            When your final-stage processor sends you a sale, it
-            shows up in <strong>Inbox</strong>. You can preview the
-            full upstream chain &mdash; every processor, every
-            landbase &mdash; before you accept.
-          </p>
-        </>
+        <p>When your final-stage processor sends you a sale, it shows up in <strong>Inbox</strong>. You can preview the full upstream chain — every processor, every landbase — before you accept.</p>
       ),
       cta: { label: 'Open Inbox', href: '/inbox' },
     },
     {
       title: 'Walk the chain',
       body: (
-        <>
-          <p>
-            Every accepted sale carries a <strong>transaction
-            certificate</strong> with origin certificates from each
-            contributing landbase. Use the <strong>Certificates</strong>{' '}
-            page to walk the full chain back to source.
-          </p>
-        </>
+        <p>Every accepted sale carries a <strong>transaction certificate</strong> with origin certificates from each contributing landbase. Use the <strong>Certificates</strong> page to walk the full chain back to source.</p>
       ),
       cta: { label: 'Open Certificates', href: '/certificates' },
     },
     {
       title: 'See the regenerative footprint',
       body: (
-        <>
-          <p>
-            Your <strong>dashboard</strong> rolls up the volume
-            of L2M-verified wool that has moved through your
-            organization, the landbases behind it, and the supply
-            chain partners involved. It&apos;s your story, ready
-            to share.
-          </p>
-        </>
+        <p>Your <strong>dashboard</strong> rolls up the volume of L2M-verified wool that has moved through your organization, the landbases behind it, and the supply chain partners involved. It&apos;s your story, ready to share.</p>
       ),
       cta: { label: 'Open Dashboard', href: '/' },
     },
     {
       title: 'You’re set.',
       body: (
-        <>
-          <p>
-            Tessilbiella will send you a sale soon &mdash; watch
-            your <strong>inbox</strong>. If you want to revisit
-            this tour, open{' '}
-            <Link href="/help" className="text-[#063359] underline">Help</Link>{' '}
-            from the sidebar anytime.
-          </p>
-        </>
+        <p>Watch your <strong>inbox</strong> — verified material from your supply chain will arrive there. If you want to revisit this tour, open <Link href="/help" className="text-[#063359] underline">Help</Link> from the sidebar anytime.</p>
       ),
     },
   ]
@@ -448,21 +333,13 @@ function genericSteps(org: string): Step[] {
     {
       title: `Welcome${org ? `, ${org}` : ''}.`,
       body: (
-        <p>
-          You&apos;re signed in to Land to Market &mdash; Chain of
-          Custody. Your dashboard shows action items and recent
-          activity; the sidebar has everything else.
-        </p>
+        <p>You&apos;re signed in to Land to Market — Chain of Custody. Your dashboard shows action items and recent activity; the sidebar has everything else.</p>
       ),
     },
     {
       title: 'You’re set.',
       body: (
-        <p>
-          If you want to revisit this tour, open{' '}
-          <Link href="/help" className="text-[#063359] underline">Help</Link>{' '}
-          from the sidebar.
-        </p>
+        <p>If you want to revisit this tour, open <Link href="/help" className="text-[#063359] underline">Help</Link> from the sidebar.</p>
       ),
     },
   ]
