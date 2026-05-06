@@ -495,3 +495,116 @@ themselves. Then they sell the result onward, where the chain repeats.
 - `/processing/new` form should let partners use `inventory_lots` as
   inputs (the schema supports `source_type='inventory_lot'`); UI
   currently only exposes raw purchases.
+
+  ### Day 18 — Real-world 3-hop chain test + email infra
+
+**Goal:** Stress-test the recursive provenance logic with a realistic
+chain: Engraw (first-stage scourer, buying from landbases) → Ituzaingó
+(top maker) → Suedwolle (yarn maker) → Kering (final buyer). At each
+hop, the receiving partner accepts in their inbox, processes the
+material into their own lot, sells onward. Verify the chain back to
+Engraw's landbase is preserved at every stage.
+
+**Test setup:**
+- Wiped all transactional data on prod (sales, certs, lots, batches,
+  purchases).
+- Invited new partner users for Engraw, Ituzaingó, Suedwolle (Kering
+  test user already existed).
+- Hit the Supabase magic-link rate limit several times during invites;
+  documented the workaround (manually create user via dashboard +
+  bypass auto-confirm).
+
+**Schema migrations:**
+- `24_buyer_acquisition.sql` (REVERTED): initial buyer-side acquisition
+  approach added `received_from_sale_id` to `inventory_lots`. Wrong
+  semantic — received material then displayed as "Processed" from
+  the buyer's POV.
+- `25_received_as_raw_purchases.sql`: correct model. Made
+  `raw_material_purchases.landbase_id` nullable and added
+  `source_sale_id`. `accept_sale` now inserts a buyer-side
+  `raw_material_purchases` row (received material is unprocessed input
+  from the buyer's perspective). `issue_tc_for_sale` updated with
+  Case B recursion: when batch input is a received purchase, walk to
+  the source sale's TC's origin links and copy them with proportional
+  volume re-attribution. Backfilled existing accepted sales.
+- `26_email_helpers.sql`: SECURITY DEFINER RPC `get_org_user_emails`
+  for transactional emails to bypass RLS when looking up org members.
+- `27_recursive_trace.sql`: rewrote `get_trace_by_sale_code` with a
+  recursive CTE that walks `source_sale_id` chains. The previous
+  version inner-joined `landbases` on `raw_material_purchases.landbase_id`
+  which dropped received-purchase rows entirely (their landbase_id is
+  null). Now the trace walks through any number of hops and aggregates
+  ultimate landbase contributions.
+- `28_oc_chain_visibility_for_pending.sql`: rewrote
+  `is_buyer_for_oc_in_chain` (the RLS helper) with a similar recursive
+  CTE. Migration 23's version only allowed buyers to see upstream OCs
+  AFTER accepting (when a TC link was created). Buyers need to verify
+  upstream OCs BEFORE deciding, so the helper now walks the actual
+  batch_inputs chain regardless of whether the TC exists.
+
+**Code changes:**
+- `src/lib/email/notifications.ts` (new) — Resend integration. Three
+  notification types: `notifySaleArrived` (to buyer org when sale
+  sent), `notifySaleAccepted` (to seller org), `notifySaleRejected`
+  (to seller org with rejection notes). Uses `get_org_user_emails`
+  RPC to email all users in the recipient org.
+- `src/app/sales/actions.ts` — `createSale` now fires
+  `notifySaleArrived` after the RPC succeeds.
+- `src/app/inbox/actions.ts` — `acceptSale` and `rejectSale` fire
+  the appropriate notification with the buyer org name + response notes.
+- `src/app/sales/page.tsx` — scoped to user's own org outgoing sales
+  only. Buyer perspective (incoming) lives in `/inbox` and `/purchases`.
+- `src/app/sales/page.tsx` — dropped `(platform)`/`(external)` suffix
+  on buyer label since all sales are now platform sales.
+- `src/app/sales/new/page.tsx` — filtered inventory lot dropdown to
+  user's own org (admin had been seeing all orgs' lots, then
+  `record_sale` rejected the cross-org pick).
+- `src/app/trace/[code]/page.tsx` — full redesign. Two sections:
+  Step 1 Origin landbase(s) (front-and-center, with per-landbase
+  attributed volume), Step 2 Sale (buyer, date, volume). Drops the
+  Inventory Lot and Processing Batch sections that were too noisy
+  for buyer-facing verification.
+- `src/app/inbox/page.tsx` — added "Verify upstream provenance →"
+  link on each pending sale card.
+- `src/app/purchases/page.tsx` — unified direct + received purchases.
+  Source column adapts: direct shows landbase + OC link, received
+  shows seller org + TC link.
+
+**Resend integration:**
+- Account created, API key in Vercel env (`RESEND_API_KEY`).
+- Currently using sandbox sender `onboarding@resend.dev` which
+  restricts delivery to only the Resend signup email address.
+  Domain verification (e.g. `landtomarket.com`) deferred until DNS
+  access available; once verified, transactional emails will deliver
+  to anyone.
+- Auth emails (magic links) NOT routed through Resend — that requires
+  Supabase Pro plan to configure custom SMTP. Magic-link rate limits
+  remain a friction during testing on free Supabase.
+
+**Verification of the 3-hop chain (Engraw → Ituzaingó → Suedwolle → Kering):**
+
+| Hop | Action | Volume |
+|---|---|---|
+| 1 | Engraw buys 10t raw from Agua Dulce, processes to 8t scoured, sells 5t | |
+| 2 | Ituzaingó accepts, processes to 4t tops, sells 3t | |
+| 3 | Suedwolle accepts, processes to 2.5t yarn, sells 2t | |
+| 4 | Kering accepts | 2t |
+
+Kering's TC for the final sale contains a link to Engraw's
+`OC-WOOL-2026-0001` with `volume_attributed = 2t`, traced through 3
+processing batches. `/trace` for any sale code shows the originating
+landbase (Agua Dulce, Uruguay) regardless of hop position.
+
+**Open / deferred:**
+- Resend domain verification (DNS access for landtomarket.com).
+- Supabase Pro upgrade (for custom SMTP on auth emails — solves
+  magic-link rate limit permanently).
+- Eligibility report URL link on origin certificates: code is in
+  place but most landbases don't have the URL populated. Salesforce
+  sync mapping for this field hasn't been verified.
+- Role-based access: only first-stage processors should see
+  `/purchases/new` (currently anyone can use it).
+- `/processing/new` form should let partners use processed inventory
+  lots as inputs (schema supports it; UI doesn't).
+- Production hardening: error states, mobile responsive audit,
+  rate-limited destructive actions.
