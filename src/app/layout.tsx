@@ -33,15 +33,18 @@ export default async function RootLayout({
 
   let userEmail: string | null = null;
   let userRole: string | null = null;
+  let isFinalBrand = false;
 
   if (user) {
     userEmail = user.email ?? null;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, organization:organization_id(is_final_brand)")
       .eq("id", user.id)
       .maybeSingle();
     userRole = profile?.role ?? null;
+    const org = profile?.organization as { is_final_brand: boolean } | null;
+    isFinalBrand = org?.is_final_brand ?? false;
   }
 
   const isAdmin = userRole === "admin";
@@ -60,8 +63,12 @@ export default async function RootLayout({
               <Link href="/landbases" className={linkClass}>Landbases</Link>
               <Link href="/purchases" className={linkClass}>Purchases</Link>
               <Link href="/inventory" className={linkClass}>Inventory</Link>
-              <Link href="/processing" className={linkClass}>Processing</Link>
-              <Link href="/sales" className={linkClass}>Sales</Link>
+              {isFinalBrand ? null : (
+                <Link href="/processing" className={linkClass}>Processing</Link>
+              )}
+              {isFinalBrand ? null : (
+                <Link href="/sales" className={linkClass}>Sales</Link>
+              )}
               <Link href="/inbox" className={linkClass}>Inbox</Link>
               <Link href="/partner-requests" className={linkClass}>Partner Requests</Link>
               <Link href="/certificates" className={linkClass}>Certificates</Link>
