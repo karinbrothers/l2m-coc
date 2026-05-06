@@ -58,14 +58,13 @@ export default async function RootLayout({
           <aside className="w-56 flex flex-col bg-[#063359] p-4 print:hidden">
             <div className="mb-6 px-2">
               <Image
-                src="/l2m-logo-white.svg"
-                alt="Land to Market"
-                width={120}
-                height={120}
+                src="/chain-of-custody-logo.svg"
+                alt="Land to Market — Chain of Custody"
+                width={112}
+                height={100}
                 priority
-                className="h-auto w-28"
+                className="h-auto w-32"
               />
-              <p className="mt-2 text-xs text-slate-300">Chain of Custody</p>
             </div>
             <nav className="space-y-1 flex-1">
               <Link href="/" className={linkClass}>Dashboard</Link>
