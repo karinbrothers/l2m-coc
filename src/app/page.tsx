@@ -143,7 +143,7 @@ export default async function Home() {
             {lifetimeTonnes.toFixed(1)} tonnes
           </div>
           <p className="mt-1 text-sm text-emerald-800">
-            of material from regenerative landbases has moved through your organization.
+            of material from regenerating landbases has moved through your organization.
           </p>
         </div>
       ) : null}
@@ -242,37 +242,42 @@ export default async function Home() {
         )}
       </div>
 
-      {/* Quick actions */}
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-          Quick actions
-        </h3>
-        <div className="mt-3 flex flex-wrap gap-3">
-          {isFirstStage ? (
-            <QuickAction href="/purchases/new" label="+ New purchase" />
-          ) : null}
-          {isFinalBrand ? null : (
-            <QuickAction href="/processing/new" label="+ New batch" />
-          )}
-          {isFinalBrand ? null : (
-            <QuickAction href="/sales/new" label="+ New sale" />
-          )}
-          {actionItemsCount > 0 ? (
-            <QuickAction
-              href="/inbox"
-              label={`Review inbox (${actionItemsCount})`}
-              variant="primary"
-            />
-          ) : null}
-          {isAdmin ? (
-            <QuickAction
-              href="/admin/invitations"
-              label="Manage invitations"
-              variant="ghost"
-            />
-          ) : null}
+      {/* Quick actions — hidden if user has no available actions */}
+      {(isFirstStage ||
+        !isFinalBrand ||
+        actionItemsCount > 0 ||
+        isAdmin) ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+            Quick actions
+          </h3>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {isFirstStage ? (
+              <QuickAction href="/purchases/new" label="+ New purchase" />
+            ) : null}
+            {isFinalBrand ? null : (
+              <QuickAction href="/processing/new" label="+ New batch" />
+            )}
+            {isFinalBrand ? null : (
+              <QuickAction href="/sales/new" label="+ New sale" />
+            )}
+            {actionItemsCount > 0 ? (
+              <QuickAction
+                href="/inbox"
+                label={`Review inbox (${actionItemsCount})`}
+                variant="primary"
+              />
+            ) : null}
+            {isAdmin ? (
+              <QuickAction
+                href="/admin/invitations"
+                label="Manage invitations"
+                variant="ghost"
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Recent activity feed coming in Block 2 */}
       <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
