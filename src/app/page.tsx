@@ -170,7 +170,7 @@ export default async function Home() {
           .limit(5),
       ])
 
-    for (const p of (purchasesAct.data ?? []) as Array<{
+    for (const p of (purchasesAct.data ?? []) as unknown as Array<{
       id: string
       code: string
       volume: number
@@ -192,7 +192,7 @@ export default async function Home() {
       })
     }
 
-    for (const b of (batchesAct.data ?? []) as Array<{
+    for (const b of (batchesAct.data ?? []) as unknown as Array<{
       id: string
       output_product: string
       output_volume: number
@@ -207,7 +207,7 @@ export default async function Home() {
       })
     }
 
-    for (const s of (salesSentAct.data ?? []) as Array<{
+    for (const s of (salesSentAct.data ?? []) as unknown as Array<{
       id: string
       code: string
       volume: number
@@ -247,7 +247,7 @@ export default async function Home() {
       }
     }
 
-    for (const s of (salesReceivedAct.data ?? []) as Array<{
+    for (const s of (salesReceivedAct.data ?? []) as unknown as Array<{
       id: string
       code: string
       volume: number
