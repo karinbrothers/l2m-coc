@@ -63,7 +63,7 @@ export default async function RootLayout({
                 width={112}
                 height={100}
                 priority
-                className="h-auto w-44"
+                className="h-auto w-40"
               />
             </div>
             <nav className="space-y-1 flex-1">
