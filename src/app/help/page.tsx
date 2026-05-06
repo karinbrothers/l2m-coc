@@ -23,6 +23,24 @@ type Stage =
   | 'final_brand'
   | null
 
+type OrgRow = {
+  supply_chain_stage?: string | null
+  is_first_stage_processor?: boolean | null
+  is_final_brand?: boolean | null
+} | null
+
+function deriveStage(org: OrgRow): Stage {
+  const text = (org?.supply_chain_stage ?? '').toLowerCase().trim()
+  if (text === 'first_stage_processor') return 'first_stage_processor'
+  if (text === 'middle_stage_processor') return 'middle_stage_processor'
+  if (text === 'final_stage_processor') return 'final_stage_processor'
+  if (text === 'final_brand') return 'final_brand'
+
+  if (org?.is_final_brand) return 'final_brand'
+  if (org?.is_first_stage_processor) return 'first_stage_processor'
+  return 'middle_stage_processor'
+}
+
 export default async function HelpPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -36,21 +54,17 @@ export default async function HelpPage() {
 
   const { data: org } = await supabase
     .from('organizations')
-    .select('name, supply_chain_stage')
+    .select('name, supply_chain_stage, is_first_stage_processor, is_final_brand')
     .eq('id', profile?.organization_id ?? '')
     .maybeSingle()
 
-  const stage = (org?.supply_chain_stage as Stage) ?? null
-  const orgName = org?.name ?? 'your organization'
+  const stage = deriveStage(org)
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
       <header className="mb-8">
-        <p className="text-sm text-gray-500 uppercase tracking-wide mb-1">
-          Help
-        </p>
         <h1 className="text-3xl font-semibold text-gray-900">
-          How {orgName} uses Land to Market
+          Chain of Custody User Guide
         </h1>
         <p className="mt-3 text-gray-600 leading-relaxed">
           A quick reference for everything in the app, written for
@@ -169,7 +183,7 @@ function FspHelp() {
         </p>
       </Section>
 
-      <Section title="Inventory and certificates" href="/inventory" cta="Open Inventory">
+      <Section title="Inventory and certificates" href="/certificates" cta="Open Certificates">
         <p>
           The Inventory page shows how much unprocessed material
           and how much processed material you currently hold.
@@ -213,7 +227,7 @@ function MiddleHelp() {
         </p>
       </Section>
 
-      <Section title="Trace and certificates" href="/inventory" cta="Open Inventory">
+      <Section title="Trace and certificates" href="/certificates" cta="Open Certificates">
         <p>
           Walk any sale or batch back to source through the Trace
           view. Certificates list every OC and TC tied to your
@@ -236,7 +250,7 @@ function BrandHelp() {
         </p>
       </Section>
 
-      <Section title="2. The transaction certificate" href="/inventory" cta="Open Certificates">
+      <Section title="2. The transaction certificate" href="/certificates" cta="Open Certificates">
         <p>
           Each accepted sale carries a transaction certificate
           (TC) listing every origin certificate involved. This is
@@ -245,7 +259,7 @@ function BrandHelp() {
         </p>
       </Section>
 
-      <Section title="3. Walk the chain" href="/inventory" cta="Open Inventory">
+      <Section title="3. Walk the chain" href="/certificates" cta="Open Certificates">
         <p>
           Click into any TC and follow the chain back to the
           original landbases. You&apos;ll see who handled the wool
@@ -256,9 +270,9 @@ function BrandHelp() {
       <Section title="4. Your dashboard" href="/" cta="Open Dashboard">
         <p>
           The dashboard rolls up the volume of L2M-verified wool
-          that has moved through {`{your organization}`}, the
-          landbases behind it, and the partners involved. Use it
-          to tell your sustainability story.
+          that has moved through your organization, the landbases
+          behind it, and the partners involved. Use it to tell
+          your sustainability story.
         </p>
       </Section>
     </div>
@@ -280,7 +294,7 @@ function GenericHelp() {
           of the full chain back to landbase.
         </p>
       </Section>
-      <Section title="Inventory and certificates" href="/inventory" cta="Open Inventory">
+      <Section title="Inventory and certificates" href="/certificates" cta="Open Certificates">
         <p>
           Stock levels and every certificate tied to your
           organization.

@@ -3,11 +3,10 @@
 // Stage-aware first-login welcome tour. Self-bootstrapping:
 // drop <WelcomeModal /> into layout.tsx and it handles everything.
 //
-// On mount it loads the current user's profile + org stage. If
-// has_completed_onboarding is false it shows a 5-step walkthrough
-// tailored to whether the user is at a first-stage processor,
-// a middle-stage processor, or a final brand. The final step
-// calls mark_onboarding_complete() so the tour never reappears.
+// Stage detection: prefers organizations.supply_chain_stage (the
+// Salesforce-driven source of truth), but falls back to the
+// is_first_stage_processor / is_final_brand booleans when stage
+// is null or unrecognised.
 
 'use client'
 
@@ -35,7 +34,6 @@ export default function WelcomeModal() {
   const [stepIdx, setStepIdx] = useState(0)
   const [closing, setClosing] = useState(false)
 
-  // Bootstrap: figure out if we should render
   useEffect(() => {
     let cancelled = false
     const run = async () => {
@@ -53,12 +51,12 @@ export default function WelcomeModal() {
 
       const { data: org } = await supabase
         .from('organizations')
-        .select('name, supply_chain_stage')
+        .select('name, supply_chain_stage, is_first_stage_processor, is_final_brand')
         .eq('id', profile.organization_id)
         .maybeSingle()
 
       if (cancelled) return
-      setStage((org?.supply_chain_stage as Stage) ?? null)
+      setStage(deriveStage(org))
       setOrgName(org?.name ?? '')
       setShow(true)
     }
@@ -170,6 +168,30 @@ export default function WelcomeModal() {
       </div>
     </div>
   )
+}
+
+// ---------------------------------------------------------------
+// Stage derivation: prefer the text column, fall back to booleans
+// ---------------------------------------------------------------
+
+type OrgRow = {
+  supply_chain_stage?: string | null
+  is_first_stage_processor?: boolean | null
+  is_final_brand?: boolean | null
+} | null
+
+function deriveStage(org: OrgRow): Stage {
+  const text = (org?.supply_chain_stage ?? '').toLowerCase().trim()
+  if (text === 'first_stage_processor') return 'first_stage_processor'
+  if (text === 'middle_stage_processor') return 'middle_stage_processor'
+  if (text === 'final_stage_processor') return 'final_stage_processor'
+  if (text === 'final_brand') return 'final_brand'
+
+  // Fallback to booleans
+  if (org?.is_final_brand) return 'final_brand'
+  if (org?.is_first_stage_processor) return 'first_stage_processor'
+  // Anyone else with no stage info is treated as a middle-stage processor
+  return 'middle_stage_processor'
 }
 
 // ---------------------------------------------------------------
@@ -382,12 +404,12 @@ function brandSteps(org: string): Step[] {
           <p>
             Every accepted sale carries a <strong>transaction
             certificate</strong> with origin certificates from each
-            contributing landbase. Use the <strong>Trace</strong>{' '}
-            view to walk the full chain back to source.
+            contributing landbase. Use the <strong>Certificates</strong>{' '}
+            page to walk the full chain back to source.
           </p>
         </>
       ),
-      cta: { label: 'Open Certificates', href: '/inventory' },
+      cta: { label: 'Open Certificates', href: '/certificates' },
     },
     {
       title: 'See the regenerative footprint',

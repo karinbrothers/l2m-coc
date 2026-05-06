@@ -1,24 +1,26 @@
 // src/app/help/RestartTourButton.tsx
 //
 // Tiny client wrapper around the resetOnboarding server action.
-// Flips has_completed_onboarding back to false and reloads so the
-// welcome modal appears immediately. Lives on the Help page.
+// Flips has_completed_onboarding back to false, then forces a hard
+// reload to the dashboard so the WelcomeModal (which lives in
+// layout.tsx and persists across client-side navigations) re-runs
+// its bootstrap logic and re-shows itself.
 
 'use client'
 
 import { useTransition } from 'react'
-import { useRouter } from 'next/navigation'
 import { resetOnboarding } from '../onboarding/actions'
 
 export default function RestartTourButton() {
   const [isPending, startTransition] = useTransition()
-  const router = useRouter()
 
   const restart = () => {
     startTransition(async () => {
       await resetOnboarding()
-      router.push('/')
-      router.refresh()
+      // Hard reload — router.push/refresh leaves the client-side
+      // WelcomeModal mounted with show=false in state. We need
+      // the component to re-bootstrap from scratch.
+      window.location.href = '/'
     })
   }
 
