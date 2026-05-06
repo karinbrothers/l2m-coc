@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import { createPurchase } from '../actions'
@@ -32,10 +33,20 @@ function errorCopy(code: string | undefined): string | null {
 }
 
 export default async function NewPurchasePage({ searchParams }: PageProps) {
-  await requireUser()
+  const user = await requireUser()
+  const supabase = await createClient()
   const { error } = await searchParams
 
-  const supabase = await createClient()
+  // Gate: only first-stage processors can record direct purchases
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('is_first_stage_processor')
+    .eq('id', user.organization_id)
+    .maybeSingle()
+
+  if (!org?.is_first_stage_processor) {
+    redirect('/purchases?error=not_first_stage')
+  }
 
   const { data: landbases } = await supabase
     .from('landbases')
@@ -60,8 +71,8 @@ export default async function NewPurchasePage({ searchParams }: PageProps) {
           New purchase
         </h2>
         <p className="mt-1 text-sm text-slate-600">
-          Record a raw wool purchase from an eligible landbase. A purchase code
-          will be generated automatically.
+          Record an unprocessed wool purchase from an eligible landbase. A
+          purchase code will be generated automatically.
         </p>
       </div>
 

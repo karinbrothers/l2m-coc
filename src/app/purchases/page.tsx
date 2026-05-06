@@ -36,8 +36,16 @@ function formatDate(iso: string | null): string {
 }
 
 export default async function PurchasesPage() {
-  await requireUser()
+  const user = await requireUser()
   const supabase = await createClient()
+
+  const { data: org } = await supabase
+    .from('organizations')
+    .select('is_first_stage_processor')
+    .eq('id', user.organization_id)
+    .maybeSingle()
+
+  const isFirstStage = org?.is_first_stage_processor ?? false
 
   const { data: purchases } = await supabase
     .from('raw_material_purchases')
@@ -95,12 +103,14 @@ export default async function PurchasesPage() {
             from accepted sales. All material here can be drawn into processing.
           </p>
         </div>
-        <Link
-          href="/purchases/new"
-          className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e]"
-        >
-          + New purchase
-        </Link>
+        {isFirstStage ? (
+          <Link
+            href="/purchases/new"
+            className="rounded-md bg-[#063359] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0a4a7e]"
+          >
+            + New purchase
+          </Link>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -138,8 +148,9 @@ export default async function PurchasesPage() {
 
       {list.length === 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-          No purchases yet. Record a direct purchase from a landbase, or accept
-          an incoming sale from your inbox.
+          {isFirstStage
+            ? 'No purchases yet. Record a direct purchase from a landbase, or accept an incoming sale from your inbox.'
+            : 'No incoming material yet. Accepted sales from suppliers will appear here.'}
         </div>
       ) : (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
