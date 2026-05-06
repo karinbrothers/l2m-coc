@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
+import EmptyState from '@/components/EmptyState'
 import { acceptSale, rejectSale } from './actions'
 
 type PageProps = {
@@ -90,6 +91,37 @@ export default async function InboxPage({ searchParams }: PageProps) {
   const list = sales ?? []
   const pendingRows = list.filter((s) => s.status === 'pending')
   const historyRows = list.filter((s) => s.status !== 'pending')
+
+  // Truly empty inbox (no pending and no history) gets the rich
+  // empty state. Once there's any history we go back to the
+  // normal pending/history layout.
+  if (list.length === 0) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">Inbox</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Sales sent to your organization. Accept to receive the volume and
+            a transaction certificate. Reject and the volume returns to the
+            seller&apos;s inventory.
+          </p>
+        </div>
+
+        <EmptyState
+          icon="📨"
+          title="Nothing waiting on you"
+          body={
+            <>
+              When an upstream partner sells verified material to you,
+              it&apos;ll appear here with a preview of the full chain back to
+              landbase &mdash; so you can verify provenance before accepting.
+            </>
+          }
+          secondaryCta={{ label: 'Read the guide', href: '/help' }}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">

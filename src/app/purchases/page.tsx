@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
+import EmptyState from '@/components/EmptyState'
 
 type Purchase = {
   id: string
@@ -147,11 +148,32 @@ export default async function PurchasesPage() {
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-          {isFirstStage
-            ? 'No purchases yet. Record a direct purchase from a landbase, or accept an incoming sale from your inbox.'
-            : 'No incoming material yet. Accepted sales from suppliers will appear here.'}
-        </div>
+        <EmptyState
+          icon="📦"
+          title="No purchases yet"
+          body={
+            isFirstStage ? (
+              <>
+                A purchase records L2M-verified wool you&apos;ve received from
+                a landbase. Landbases come from Salesforce automatically — pick
+                one, enter volume and clip year, and the system issues an
+                origin certificate for you.
+              </>
+            ) : (
+              <>
+                Verified material will appear here automatically when you
+                accept an incoming sale in your inbox. There&apos;s nothing to
+                record manually at your stage.
+              </>
+            )
+          }
+          primaryCta={
+            isFirstStage
+              ? { label: 'Record a purchase', href: '/purchases/new' }
+              : { label: 'Open inbox', href: '/inbox' }
+          }
+          secondaryCta={{ label: 'Read the guide', href: '/help' }}
+        />
       ) : (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">

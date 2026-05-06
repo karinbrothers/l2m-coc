@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
+import EmptyState from '@/components/EmptyState'
 
 type PageProps = {
   searchParams: Promise<{ error?: string }>
@@ -114,11 +115,32 @@ export default async function SalesPage({ searchParams }: PageProps) {
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-          {isFinalBrand
-            ? 'Brands don\'t make outgoing sales. Look in your inbox for incoming material.'
-            : 'No sales recorded yet.'}
-        </div>
+        <EmptyState
+          icon="📤"
+          title={isFinalBrand ? 'Brands don’t sell onward' : 'No sales yet'}
+          body={
+            isFinalBrand ? (
+              <>
+                Your organization is a brand &mdash; the chain ends here. Look
+                in your inbox for incoming verified material from your
+                final-stage processor.
+              </>
+            ) : (
+              <>
+                A sale records verified material you&apos;re sending to a
+                buyer. They&apos;ll receive an invitation and accept it from
+                their inbox; once they do, a transaction certificate is
+                issued automatically with the full chain back to landbase.
+              </>
+            )
+          }
+          primaryCta={
+            isFinalBrand
+              ? { label: 'Open inbox', href: '/inbox' }
+              : { label: 'Record a sale', href: '/sales/new' }
+          }
+          secondaryCta={{ label: 'Read the guide', href: '/help' }}
+        />
       ) : (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">

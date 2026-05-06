@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
+import EmptyState from '@/components/EmptyState'
 
 type Batch = {
   id: string
@@ -78,10 +79,20 @@ export default async function ProcessingPage() {
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-          No processing batches yet. Record one to convert unprocessed material into
-          inventory lots ready for sale.
-        </div>
+        <EmptyState
+          icon="🧶"
+          title="No processed batches yet"
+          body={
+            <>
+              A batch combines one or more purchases of verified material into
+              a finished or semi-finished product, ready for sale. Origin
+              certificates carry forward automatically &mdash; you can&apos;t
+              break the chain of custody by mistake.
+            </>
+          }
+          primaryCta={{ label: 'Create a batch', href: '/processing/new' }}
+          secondaryCta={{ label: 'Read the guide', href: '/help' }}
+        />
       ) : (
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">

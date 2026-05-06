@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
+import WelcomeModal from "@/components/WelcomeModal";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -63,7 +64,7 @@ export default async function RootLayout({
                 width={112}
                 height={100}
                 priority
-                className="h-auto w-40"
+                className="h-auto w-37"
               />
             </div>
             <nav className="space-y-1 flex-1">
@@ -80,6 +81,7 @@ export default async function RootLayout({
               <Link href="/inbox" className={linkClass}>Inbox</Link>
               <Link href="/partner-requests" className={linkClass}>Partner Requests</Link>
               <Link href="/certificates" className={linkClass}>Certificates</Link>
+              <Link href="/help" className={linkClass}>Help</Link>
               {isAdmin ? (
                 <>
                   <div className="mt-4 pt-4 border-t border-[#0a4a7e]">
@@ -112,6 +114,7 @@ export default async function RootLayout({
             {children}
           </main>
         </div>
+        <WelcomeModal />
       </body>
     </html>
   );
