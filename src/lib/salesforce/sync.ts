@@ -25,6 +25,7 @@ interface SalesforceAccount {
   Brand_Partner_Status__c: string | null;
   Supply_Chain_Partner_Status__c: string | null;
   L2M_Retailer_Status__c: string | null;
+  Supply_Chain_Stage__c: string | null;
 }
 
 interface SalesforceSupplyGroup {
@@ -130,7 +131,8 @@ async function syncOrganizationsPass(
     SELECT Id, Name,
            Brand_Partner_Status__c,
            Supply_Chain_Partner_Status__c,
-           L2M_Retailer_Status__c
+           L2M_Retailer_Status__c,
+           Supply_Chain_Stage__c
     FROM Account
     WHERE Brand_Partner_Status__c = 'Active Brand Partner'
        OR Supply_Chain_Partner_Status__c IN ('Active Supply Chain Partner', 'Non-Partner Supply Chain Actor')
@@ -154,6 +156,7 @@ async function syncOrganizationsPass(
       brand_partner_status: a.Brand_Partner_Status__c,
       supply_chain_partner_status: a.Supply_Chain_Partner_Status__c,
       l2m_retailer_status: a.L2M_Retailer_Status__c,
+      supply_chain_stage: a.Supply_Chain_Stage__c,
     };
     const existingId = existingMap.get(a.Id);
     if (existingId) {
