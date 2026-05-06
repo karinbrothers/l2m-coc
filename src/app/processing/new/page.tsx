@@ -24,11 +24,11 @@ function errorCopy(code: string | undefined): string | null {
   if (code === 'invalid_input_volume')
     return 'Each input volume must be a positive number.'
   if (code === 'no_inputs')
-    return 'Pick at least one raw purchase and enter how much you used.'
+    return 'Pick at least one source and enter how much you used.'
   if (code === 'insufficient_input_volume')
-    return 'You tried to use more volume than is remaining on a raw purchase.'
+    return 'You tried to use more volume than is remaining on a source.'
   if (code === 'input_not_found')
-    return 'A selected raw purchase is not available to your organization.'
+    return 'A selected source is not available to your organization.'
   if (code === 'no_organization')
     return 'Your account is not part of an organization.'
   return `Error: ${code}`
@@ -65,8 +65,8 @@ export default async function NewProcessingBatchPage({
           New processing batch
         </h2>
         <p className="mt-1 text-sm text-slate-600">
-          Convert raw purchases into a single inventory lot. Enter how much
-          volume each raw purchase contributes — leave at 0 to skip.
+          Convert unprocessed material into a single inventory lot. Enter how
+          much volume each source contributes — leave at 0 to skip.
         </p>
       </div>
 
@@ -78,7 +78,7 @@ export default async function NewProcessingBatchPage({
 
       {options.length === 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No raw purchases with remaining volume. Record a purchase first.
+          No unprocessed material with remaining volume. Record a purchase first.
         </div>
       ) : (
         <form
@@ -88,7 +88,7 @@ export default async function NewProcessingBatchPage({
           <div>
             <h3 className="text-sm font-semibold text-slate-700">Inputs</h3>
             <p className="mt-1 text-xs text-slate-500">
-              Volume to draw from each raw purchase. Leave at 0 to skip.
+              Volume to draw from each source. Leave at 0 to skip.
             </p>
             <div className="mt-3 divide-y divide-slate-100 rounded-md border border-slate-200">
               {options.map((p) => (

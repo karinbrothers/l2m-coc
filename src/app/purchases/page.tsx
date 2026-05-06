@@ -99,8 +99,8 @@ export default async function PurchasesPage() {
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Purchases</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Raw material on hand — purchased directly from landbases or received
-            from accepted sales. All material here can be drawn into processing.
+            Unprocessed material on hand — purchased directly from landbases or
+            received from accepted sales. All material here can be drawn into processing.
           </p>
         </div>
         {isFirstStage ? (

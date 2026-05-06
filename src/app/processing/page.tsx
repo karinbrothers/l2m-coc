@@ -36,7 +36,7 @@ export default async function ProcessingPage() {
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">Processing</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Records of raw material processed into inventory lots ready for sale.
+            Records of unprocessed material processed into inventory lots ready for sale.
           </p>
         </div>
         <Link
@@ -79,7 +79,7 @@ export default async function ProcessingPage() {
 
       {list.length === 0 ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-          No processing batches yet. Record one to convert raw purchases into
+          No processing batches yet. Record one to convert unprocessed material into
           inventory lots ready for sale.
         </div>
       ) : (

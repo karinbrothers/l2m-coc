@@ -29,11 +29,11 @@ export default async function InventoryPage() {
 
   const [rawRes, lotsRes] = await Promise.all([
     supabase
-    .from('raw_material_purchases')
-    .select(
-      'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, source_sale_id, landbases:landbase_id(name), source_sale:sales!source_sale_id(seller_org:organization_id(name))',
-    )
-    .gt('volume_remaining', 0)
+      .from('raw_material_purchases')
+      .select(
+        'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, source_sale_id, landbases:landbase_id(name), source_sale:sales!source_sale_id(seller_org:organization_id(name))',
+      )
+      .gt('volume_remaining', 0)
       .order('purchase_date', { ascending: false })
       .returns<RawPurchase[]>(),
     supabase
@@ -57,14 +57,14 @@ export default async function InventoryPage() {
       <div>
         <h2 className="text-2xl font-semibold text-slate-900">Inventory</h2>
         <p className="mt-1 text-sm text-slate-600">
-          Raw material on hand and processed inventory lots ready for sale.
+          Unprocessed material on hand and processed inventory lots ready for sale.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-xs font-medium uppercase text-slate-500">
-            Unprocessed (raw)
+            Unprocessed
           </div>
           <div className="mt-2 text-3xl font-semibold text-slate-900">
             {rawTotal.toFixed(1)} t
@@ -88,11 +88,11 @@ export default async function InventoryPage() {
 
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Unprocessed raw material
+          Unprocessed material
         </div>
         {raws.length === 0 ? (
           <div className="px-6 py-6 text-sm text-slate-500">
-            No raw material in stock.
+            No unprocessed material in stock.
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -132,7 +132,7 @@ export default async function InventoryPage() {
         </div>
         {lots.length === 0 ? (
           <div className="px-6 py-6 text-sm text-slate-500">
-            No processed lots. Record a processing batch to convert raw material
+            No processed lots. Record a processing batch to convert unprocessed material
             into a sellable lot.
           </div>
         ) : (

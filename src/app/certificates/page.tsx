@@ -63,7 +63,7 @@ export default async function CertificatesPage() {
 
       {certs.length === 0 ? (
         <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-          No certificates yet. Origin certificates are issued when raw material is purchased.
+          No certificates yet. Origin certificates are issued when unprocessed material is purchased.
           Transaction certificates are issued when a sale is accepted.
         </div>
       ) : (
