@@ -1,10 +1,14 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
 type OrgRow = {
   id: string
   name: string
-  type: string
+  type: string | null
+  is_first_stage_processor: boolean | null
+  is_final_brand: boolean | null
+  supply_chain_stage: string | null
 }
 
 type ProfileRow = {
@@ -16,131 +20,292 @@ type ProfileRow = {
   organizations: OrgRow | null
 }
 
-type LandbaseRow = {
-  id: string
-  name: string
-  country: string | null
-  eligibility_status: string
-  expiration_date: string | null
-  eligibility_report_url: string | null
-}
-
 export default async function Home() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) { redirect('/login') }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    redirect('/login')
+  }
 
   const { data: profileRaw } = await supabase
     .from('profiles')
-    .select(`id, email, full_name, role, organization_id, organizations:organization_id ( id, name, type )`)
+    .select(
+      `id, email, full_name, role, organization_id,
+       organizations:organization_id ( id, name, type, is_first_stage_processor, is_final_brand, supply_chain_stage )`,
+    )
     .eq('id', user.id)
     .single<ProfileRow>()
 
   const profile = profileRaw
   const isAdmin = profile?.role === 'admin'
+  const orgId = profile?.organization_id ?? null
   const orgName = profile?.organizations?.name ?? null
-  const orgType = profile?.organizations?.type ?? null
+  const stage = profile?.organizations?.supply_chain_stage ?? null
+  const isFirstStage =
+    profile?.organizations?.is_first_stage_processor ?? false
+  const isFinalBrand = profile?.organizations?.is_final_brand ?? false
 
-  const [
-    { count: orgsCount },
-    { count: landbasesCount },
-    { count: purchasesCount },
-    { count: batchesCount },
-  ] = await Promise.all([
-    supabase.from('organizations').select('id', { count: 'exact', head: true }),
-    supabase.from('landbases').select('id', { count: 'exact', head: true }),
-    supabase.from('raw_material_purchases').select('id', { count: 'exact', head: true }),
-    supabase.from('processing_batches').select('id', { count: 'exact', head: true }),
-  ])
+  // ─── Stats queries ────────────────────────────────────────
+  // Action items: incoming pending sales
+  const actionItemsPromise = orgId
+    ? supabase
+        .from('sales')
+        .select('id', { count: 'exact', head: true })
+        .eq('buyer_org_id', orgId)
+        .eq('status', 'pending')
+    : Promise.resolve({ count: 0 } as { count: number | null })
 
-  const { data: recentLandbases } = await supabase
-    .from('landbases')
-    .select('id, name, country, eligibility_status, expiration_date, eligibility_report_url')
-    .order('monitoring_date', { ascending: false, nullsFirst: false })
-    .limit(5)
-    .returns<LandbaseRow[]>()
+  // Unprocessed inventory: sum of volume_remaining on raw_material_purchases
+  const unprocessedPromise = orgId
+    ? supabase
+        .from('raw_material_purchases')
+        .select('volume_remaining, volume')
+        .eq('organization_id', orgId)
+    : Promise.resolve({ data: [] } as { data: { volume_remaining: number; volume: number }[] })
 
+  // Processed inventory: sum of volume_remaining on inventory_lots
+  const processedPromise = orgId
+    ? supabase
+        .from('inventory_lots')
+        .select('volume_remaining')
+        .eq('organization_id', orgId)
+    : Promise.resolve({ data: [] } as { data: { volume_remaining: number }[] })
+
+  // Outgoing pending: count of sales sent and awaiting buyer
+  const outgoingPendingPromise = orgId
+    ? supabase
+        .from('sales')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('status', 'pending')
+    : Promise.resolve({ count: 0 } as { count: number | null })
+
+  const [actionItemsRes, unprocRes, procRes, outgoingRes] =
+    await Promise.all([
+      actionItemsPromise,
+      unprocessedPromise,
+      processedPromise,
+      outgoingPendingPromise,
+    ])
+
+  const actionItemsCount = actionItemsRes.count ?? 0
+  const unprocessedRows =
+    (unprocRes as { data: { volume_remaining: number; volume: number }[] | null }).data ?? []
+  const unprocessedTonnes = unprocessedRows.reduce(
+    (s, r) => s + Number(r.volume_remaining ?? 0),
+    0,
+  )
+  const lifetimeTonnes = unprocessedRows.reduce(
+    (s, r) => s + Number(r.volume ?? 0),
+    0,
+  )
+  const processedTonnes = (
+    (procRes as { data: { volume_remaining: number }[] | null }).data ?? []
+  ).reduce((s, r) => s + Number(r.volume_remaining ?? 0), 0)
+  const outgoingPendingCount = outgoingRes.count ?? 0
+
+  // ─── Render ───────────────────────────────────────────────
   return (
     <div className="space-y-8">
+      {/* Welcome */}
       <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Welcome back{profile?.full_name ? `, ${profile.full_name}` : ''}</h2>
+        <h2 className="text-2xl font-semibold text-slate-900">
+          Welcome back{profile?.full_name ? `, ${profile.full_name}` : ''}
+        </h2>
         <p className="mt-1 text-sm text-slate-600">
           {orgName ? (
             <>
               Signed in to <strong>{orgName}</strong>
-              {orgType ? <span className="ml-1 text-slate-500">({orgType})</span> : null}
+              {stage ? <span className="ml-1 text-slate-500">· {stage}</span> : null}
               <span className="mx-2 text-slate-300">·</span>
-              <span className={isAdmin ? 'text-amber-700' : 'text-slate-600'}>{isAdmin ? 'Admin' : 'Partner'}</span>
+              <span className={isAdmin ? 'text-amber-700' : 'text-slate-600'}>
+                {isAdmin ? 'Admin' : 'Partner'}
+              </span>
             </>
           ) : (
-            <span className="text-amber-700">You aren&apos;t assigned to an organization yet. Ask your admin for an invitation.</span>
+            <span className="text-amber-700">
+              You aren&apos;t assigned to an organization yet. Ask your admin
+              for an invitation.
+            </span>
           )}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <MetricCard label={isAdmin ? 'Organizations' : 'Your organization'} value={isAdmin ? (orgsCount ?? 0) : 1} hint={isAdmin ? 'Total in system' : orgName ?? ''} />
-        <MetricCard label="Landbases" value={landbasesCount ?? 0} hint={isAdmin ? 'All orgs' : 'Visible to your org'} />
-        <MetricCard label="Purchases" value={purchasesCount ?? 0} hint={isAdmin ? 'All orgs' : 'Visible to your org'} />
-        <MetricCard label="Processing batches" value={batchesCount ?? 0} hint={isAdmin ? 'All orgs' : 'Visible to your org'} />
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Recent landbases</h3>
+      {/* Regenerative impact hero */}
+      {orgId && lifetimeTonnes > 0 ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6">
+          <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Regenerative impact
+          </div>
+          <div className="mt-2 text-2xl font-semibold text-emerald-900">
+            {lifetimeTonnes.toFixed(1)} tonnes
+          </div>
+          <p className="mt-1 text-sm text-emerald-800">
+            of material from regenerative landbases has moved through your organization.
+          </p>
         </div>
-        {!recentLandbases || recentLandbases.length === 0 ? (
-          <p className="px-6 py-6 text-sm text-slate-500">No landbases visible.</p>
+      ) : null}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Link
+          href="/inbox"
+          className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm hover:border-[#063359] hover:bg-slate-50 transition-colors"
+        >
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Action items
+          </div>
+          <div
+            className={`mt-2 text-3xl font-semibold ${actionItemsCount > 0 ? 'text-amber-700' : 'text-slate-900'}`}
+          >
+            {actionItemsCount}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {actionItemsCount === 0
+              ? 'No incoming sales'
+              : actionItemsCount === 1
+                ? 'Incoming sale awaiting your decision'
+                : 'Incoming sales awaiting your decision'}
+          </div>
+        </Link>
+
+        <Link
+          href="/inventory"
+          className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm hover:border-[#063359] hover:bg-slate-50 transition-colors"
+        >
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Unprocessed
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {unprocessedTonnes.toFixed(1)} t
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            On hand, ready to process
+          </div>
+        </Link>
+
+        {isFinalBrand ? (
+          <Link
+            href="/certificates"
+            className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm hover:border-[#063359] hover:bg-slate-50 transition-colors"
+          >
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Certificates received
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-slate-900">—</div>
+            <div className="mt-1 text-xs text-slate-500">
+              View provenance for incoming material
+            </div>
+          </Link>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-6 py-2 font-medium">Name</th>
-                <th className="px-6 py-2 font-medium">Country</th>
-                <th className="px-6 py-2 font-medium">Status</th>
-                <th className="px-6 py-2 font-medium">Expires</th>
-                <th className="px-6 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {recentLandbases.map((lb) => (
-                <tr key={lb.id}>
-                  <td className="px-6 py-3 text-slate-900">{lb.name}</td>
-                  <td className="px-6 py-3 text-slate-700">{lb.country ?? '—'}</td>
-                  <td className="px-6 py-3"><StatusBadge status={lb.eligibility_status} /></td>
-                  <td className="px-6 py-3 text-slate-500">{lb.expiration_date ? new Date(lb.expiration_date).toLocaleDateString() : '—'}</td>
-                  <td className="px-6 py-3 text-right"><ReportLink url={lb.eligibility_report_url} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Link
+            href="/inventory"
+            className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm hover:border-[#063359] hover:bg-slate-50 transition-colors"
+          >
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Processed
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-slate-900">
+              {processedTonnes.toFixed(1)} t
+            </div>
+            <div className="mt-1 text-xs text-slate-500">Ready to sell</div>
+          </Link>
+        )}
+
+        {isFinalBrand ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm opacity-60">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Outgoing
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-slate-900">—</div>
+            <div className="mt-1 text-xs text-slate-500">
+              Brands don&apos;t sell onward
+            </div>
+          </div>
+        ) : (
+          <Link
+            href="/sales"
+            className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm hover:border-[#063359] hover:bg-slate-50 transition-colors"
+          >
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Outgoing pending
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-slate-900">
+              {outgoingPendingCount}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Sent to buyers, awaiting their response
+            </div>
+          </Link>
         )}
       </div>
 
-      <p className="text-xs text-slate-400">All counts and rows above are filtered by Row-Level Security. A member of a different organization would see only their own data on this exact page.</p>
+      {/* Quick actions */}
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Quick actions
+        </h3>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {isFirstStage ? (
+            <QuickAction href="/purchases/new" label="+ New purchase" />
+          ) : null}
+          {isFinalBrand ? null : (
+            <QuickAction href="/processing/new" label="+ New batch" />
+          )}
+          {isFinalBrand ? null : (
+            <QuickAction href="/sales/new" label="+ New sale" />
+          )}
+          {actionItemsCount > 0 ? (
+            <QuickAction
+              href="/inbox"
+              label={`Review inbox (${actionItemsCount})`}
+              variant="primary"
+            />
+          ) : null}
+          {isAdmin ? (
+            <QuickAction
+              href="/admin/invitations"
+              label="Manage invitations"
+              variant="ghost"
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {/* Recent activity feed coming in Block 2 */}
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Recent activity
+        </h3>
+        <p className="mt-2 text-sm text-slate-500">
+          Activity feed coming next.
+        </p>
+      </div>
     </div>
   )
 }
 
-function ReportLink({ url }: { url: string | null }) {
-  if (!url) { return <span className="text-xs text-slate-400">No report</span> }
-  return <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium hover:underline" style={{ color: '#063359' }}>View eligibility report →</a>
-}
-
-function MetricCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
+function QuickAction({
+  href,
+  label,
+  variant = 'default',
+}: {
+  href: string
+  label: string
+  variant?: 'default' | 'primary' | 'ghost'
+}) {
+  const base = 'rounded-md px-4 py-2 text-sm font-medium shadow-sm transition-colors'
+  const styles =
+    variant === 'primary'
+      ? 'bg-[#063359] text-white hover:bg-[#0a4a7e]'
+      : variant === 'ghost'
+        ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+        : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-3xl font-semibold text-slate-900">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
-    </div>
+    <Link href={href} className={`${base} ${styles}`}>
+      {label}
+    </Link>
   )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const tone =
-    status === 'eligible' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-    status === 'expired' ? 'bg-red-50 text-red-800 border-red-200' :
-    'bg-slate-50 text-slate-700 border-slate-200'
-  return <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${tone}`}>{status}</span>
 }
