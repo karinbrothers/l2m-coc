@@ -1,12 +1,24 @@
 import Image from 'next/image';
 import type { ReactNode } from 'react';
 
+type CertificateStatus = {
+  label: string;
+  detail?: string;
+};
+
 type CertificateChromeProps = {
   title: string;
   subtitle?: string;
   certificateNumber: string | null;
   issuedAt: Date | string | null;
   description?: string;
+  /**
+   * Optional status strip rendered between the navy header and
+   * the main body. Use it to surface verification state at a
+   * glance — e.g. "L2M Verified · Eligibility valid through 28 Feb 2027"
+   * for an origin certificate.
+   */
+  status?: CertificateStatus;
   showSeal?: boolean;
   children: ReactNode;
 };
@@ -17,14 +29,16 @@ export function CertificateChrome({
   certificateNumber,
   issuedAt,
   description,
+  status,
   showSeal = true,
   children,
 }: CertificateChromeProps) {
   return (
     <div
       data-cert-print
-      className="bg-white max-w-[860px] mx-auto my-8 shadow-md print:max-w-none print:mx-0 print:my-0 print:shadow-none"
+      className="bg-white max-w-[860px] mx-auto my-8 rounded-lg overflow-hidden shadow-md print:max-w-none print:mx-0 print:my-0 print:shadow-none print:rounded-none"
     >
+      {/* Navy header */}
       <header className="bg-[#063359] text-white px-10 py-6 flex items-start justify-between gap-6">
         <div className="flex items-center gap-5">
           <Image
@@ -61,9 +75,42 @@ export function CertificateChrome({
         </div>
       </header>
 
+      {/* Verification status strip */}
+      {status && (
+        <div className="bg-slate-50 border-b border-slate-200 px-10 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 32 32"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle cx="16" cy="16" r="14" stroke="#063359" strokeWidth="1.25" />
+              <path
+                d="M11 16 l3.5 3.5 L21 12"
+                stroke="#063359"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </svg>
+            <div>
+              <div className="text-sm font-semibold text-slate-900">
+                {status.label}
+              </div>
+              {status.detail && (
+                <div className="text-xs text-slate-500">{status.detail}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="px-10 py-8 text-slate-800">
         {description && (
-          <p className="text-xs text-slate-500 italic mb-6 leading-relaxed">
+          <p className="text-sm text-slate-600 mb-7 leading-relaxed max-w-2xl">
             {description}
           </p>
         )}
@@ -99,11 +146,11 @@ export function CertificateSection({
   children: ReactNode;
 }) {
   return (
-    <section className="mb-7 last:mb-0">
-      <h2 className="text-[11px] uppercase tracking-[0.18em] text-[#063359] font-semibold mb-3 pb-1.5 border-b border-slate-200">
+    <section className="mb-8 last:mb-0 print:break-inside-avoid">
+      <h2 className="text-[11px] uppercase tracking-[0.18em] text-[#063359] font-semibold mb-4 pb-2 border-b border-slate-200">
         {title}
       </h2>
-      <div className="grid grid-cols-2 gap-x-8 gap-y-4">{children}</div>
+      <div className="grid grid-cols-2 gap-x-8 gap-y-5">{children}</div>
     </section>
   );
 }
@@ -122,7 +169,9 @@ export function CertificateField({
       <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
         {label}
       </div>
-      <div className="text-sm font-medium mt-1 text-slate-900">{children}</div>
+      <div className="text-sm font-medium mt-1.5 text-slate-900 leading-snug">
+        {children}
+      </div>
     </div>
   );
 }
