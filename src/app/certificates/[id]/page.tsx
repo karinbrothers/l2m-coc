@@ -1,9 +1,12 @@
 // src/app/certificates/[id]/page.tsx
 //
 // Loads a certificate plus the joined data each cert type needs:
-// - For Origin certs: the issuing organisation (the first-stage
-//   processor / buyer of raw material) for Box 2.
-// - For Transaction certs: contributing OCs and the sale chain.
+// origin certs link to the originating purchase via the existing
+// snapshot fields; transaction certs carry contributing OCs and
+// the sale chain. Org name/address is sourced from snapshot
+// fields where available — we deliberately don't join to the
+// organizations table here since not every cert variant has an
+// FK relationship set up.
 
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
@@ -11,11 +14,6 @@ import { OriginCertificate } from '@/components/certificates/OriginCertificate';
 import { TransactionCertificate } from '@/components/certificates/TransactionCertificate';
 
 export const dynamic = 'force-dynamic';
-
-type OrgLite = {
-  name: string | null;
-  address: string | null;
-};
 
 export default async function CertificateDetailPage({
   params,
@@ -30,7 +28,6 @@ export default async function CertificateDetailPage({
     .select(
       `
       *,
-      issuing_org:organization_id (name, address),
       certificate_origin_links!transaction_certificate_id (
         id,
         volume_attributed,
@@ -62,10 +59,6 @@ export default async function CertificateDetailPage({
     .eq('id', id)
     .maybeSingle();
 
-  // Pull out the issuing org cleanly so the cert components don't
-  // have to know about the join shape.
-  const issuingOrg = (cert?.issuing_org ?? null) as OrgLite | null;
-
   return (
     <div className="p-6">
       <div className="mb-4 print:hidden">
@@ -89,10 +82,10 @@ export default async function CertificateDetailPage({
       )}
 
       {cert && cert.type === 'origin' && (
-        <OriginCertificate certificate={cert} buyerOrg={issuingOrg} />
+        <OriginCertificate certificate={cert} />
       )}
       {cert && cert.type === 'transaction' && (
-        <TransactionCertificate certificate={cert} sellerOrg={issuingOrg} />
+        <TransactionCertificate certificate={cert} />
       )}
       {cert && cert.type !== 'origin' && cert.type !== 'transaction' && (
         <p className="text-sm text-gray-500">
