@@ -10,6 +10,7 @@ type SaleChainEntry = {
   sale_date: string | null
   volume: number
   volume_unit: string
+  product_name: string | null
   seller: { name: string }
   buyer: { name: string }
 }
@@ -120,6 +121,12 @@ function SaleStep({
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
         <div>
+          <dt className="text-xs uppercase text-slate-500">Product</dt>
+          <dd className="mt-1 capitalize text-slate-900">
+            {sale.product_name ?? '—'}
+          </dd>
+        </div>
+        <div>
           <dt className="text-xs uppercase text-slate-500">Sale date</dt>
           <dd className="mt-1 text-slate-900">{formatDate(sale.sale_date)}</dd>
         </div>
@@ -222,17 +229,7 @@ export default async function TracePage({ params }: PageProps) {
                   <EligibilityBadge status={lb.eligibility_status} />
                 </div>
 
-                <dl className="mt-4 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">
-                      Volume attributed
-                    </dt>
-                    <dd className="mt-1 text-slate-900">
-                      {input.volume_attributed != null
-                        ? `${Number(input.volume_attributed).toFixed(2)} ${rp.volume_unit}`
-                        : '—'}
-                    </dd>
-                  </div>
+                <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <dt className="text-xs uppercase text-slate-500">
                       Originally purchased
