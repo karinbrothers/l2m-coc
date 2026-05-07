@@ -55,67 +55,72 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className="flex min-h-screen">
-          <aside className="w-56 flex flex-col bg-[#063359] p-4 print:hidden">
-            <div className="mb-6 px-2">
-              <Image
-                src="/chain-of-custody-logo.svg"
-                alt="Land to Market — Chain of Custody"
-                width={112}
-                height={100}
-                priority
-                className="h-auto w-37"
-              />
-            </div>
-            <nav className="space-y-1 flex-1">
-              <Link href="/" className={linkClass}>Dashboard</Link>
-              <Link href="/landbases" className={linkClass}>Landbases</Link>
-              <Link href="/purchases" className={linkClass}>Purchases</Link>
-              <Link href="/inventory" className={linkClass}>Inventory</Link>
-              {isFinalBrand ? null : (
-                <Link href="/processing" className={linkClass}>Processing</Link>
-              )}
-              {isFinalBrand ? null : (
-                <Link href="/sales" className={linkClass}>Sales</Link>
-              )}
-              <Link href="/inbox" className={linkClass}>Inbox</Link>
-              <Link href="/partner-requests" className={linkClass}>Partner Requests</Link>
-              <Link href="/certificates" className={linkClass}>Certificates</Link>
-              <Link href="/help" className={linkClass}>Help</Link>
-              {isAdmin ? (
-                <>
-                  <div className="mt-4 pt-4 border-t border-[#0a4a7e]">
-                    <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
-                      Admin
-                    </p>
-                  </div>
-                  <Link href="/admin/invitations" className={linkClass}>Invitations</Link>
-                  <Link href="/admin/partners" className={linkClass}>Partners</Link>
-                  <Link href="/admin/activity" className={linkClass}>Supply chain activity</Link>
-                  <Link href="/admin/salesforce/connect" className={linkClass}>Salesforce sync</Link>
-                </>
-              ) : null}
-            </nav>
-            {userEmail ? (
-              <div className="mt-4 border-t border-[#0a4a7e] pt-4">
-                <p className="px-3 pb-2 text-xs text-slate-300 truncate" title={userEmail}>
-                  {userEmail}
-                </p>
-                <form action="/auth/signout" method="post">
-                  <button
-                    type="submit"
-                    className="w-full text-left px-3 py-2 rounded text-sm font-medium text-slate-100 hover:bg-[#0a4a7e]"
-                  >
-                    Sign out
-                  </button>
-                </form>
+        {!user ? (
+          // Unauthenticated layout — no sidebar, just the page.
+          <main className="min-h-screen bg-slate-50">{children}</main>
+        ) : (
+          <div className="flex min-h-screen">
+            <aside className="w-56 flex flex-col bg-[#063359] p-4 print:hidden">
+              <div className="mb-6 px-2">
+                <Image
+                  src="/chain-of-custody-logo.svg"
+                  alt="Land to Market — Chain of Custody"
+                  width={112}
+                  height={100}
+                  priority
+                  className="h-auto w-37"
+                />
               </div>
-            ) : null}
-          </aside>
-          <main className="flex-1 bg-slate-50 p-8">
-            {children}
-          </main>
-        </div>
+              <nav className="space-y-1 flex-1">
+                <Link href="/" className={linkClass}>Dashboard</Link>
+                <Link href="/landbases" className={linkClass}>Landbases</Link>
+                <Link href="/purchases" className={linkClass}>Purchases</Link>
+                <Link href="/inventory" className={linkClass}>Inventory</Link>
+                {isFinalBrand ? null : (
+                  <Link href="/processing" className={linkClass}>Processing</Link>
+                )}
+                {isFinalBrand ? null : (
+                  <Link href="/sales" className={linkClass}>Sales</Link>
+                )}
+                <Link href="/inbox" className={linkClass}>Inbox</Link>
+                <Link href="/partner-requests" className={linkClass}>Partner Requests</Link>
+                <Link href="/certificates" className={linkClass}>Certificates</Link>
+                <Link href="/help" className={linkClass}>Help</Link>
+                {isAdmin ? (
+                  <>
+                    <div className="mt-4 pt-4 border-t border-[#0a4a7e]">
+                      <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
+                        Admin
+                      </p>
+                    </div>
+                    <Link href="/admin/partners" className={linkClass}>Partners</Link>
+                    <Link href="/admin/activity" className={linkClass}>Supply chain activity</Link>
+                    <Link href="/admin/invitations" className={linkClass}>Invitations</Link>
+                    <Link href="/admin/salesforce/connect" className={linkClass}>Salesforce sync</Link>
+                  </>
+                ) : null}
+              </nav>
+              {userEmail ? (
+                <div className="mt-4 border-t border-[#0a4a7e] pt-4">
+                  <p className="px-3 pb-2 text-xs text-slate-300 truncate" title={userEmail}>
+                    {userEmail}
+                  </p>
+                  <form action="/auth/signout" method="post">
+                    <button
+                      type="submit"
+                      className="w-full text-left px-3 py-2 rounded text-sm font-medium text-slate-100 hover:bg-[#0a4a7e]"
+                    >
+                      Sign out
+                    </button>
+                  </form>
+                </div>
+              ) : null}
+            </aside>
+            <main className="flex-1 bg-slate-50 p-8">
+              {children}
+            </main>
+          </div>
+        )}
         <WelcomeModal />
       </body>
     </html>
