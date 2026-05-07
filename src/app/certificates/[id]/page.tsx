@@ -39,6 +39,7 @@ export default async function CertificateDetailPage({
       sale:sales!related_transaction_id (
         code,
         shipping_number,
+        country_of_dispatch,
         inventory_lot:inventory_lot_id (
           code,
           product_name,

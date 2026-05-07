@@ -49,6 +49,7 @@ export type TransactionCertificateData = {
   sale: {
     code: string | null;
     shipping_number: string | null;
+    country_of_dispatch: string | null;
     inventory_lot: {
       code: string | null;
       product_name: string | null;
@@ -64,8 +65,7 @@ type OrgLite = {
 
 const VERIFICATION_BODY = {
   name: 'Land to Market',
-  address:
-    'A program of the Savory Institute\n3550 Frontier Avenue, Unit B-2\nBoulder, CO 80301, USA',
+  address: '885 Arapahoe Ave\nBoulder, CO 80302\nUnited States',
 };
 
 function formatDate(d: string | null) {
@@ -96,6 +96,7 @@ export function TransactionCertificate({
   const batch = lot?.processing_batch ?? null;
   const traceCode = certificate.sale?.code ?? certificate.sale_code;
   const shippingNumber = certificate.sale?.shipping_number ?? null;
+  const countryOfDispatch = certificate.sale?.country_of_dispatch ?? null;
 
   return (
     <>
@@ -126,7 +127,7 @@ export function TransactionCertificate({
           minHeight="120px"
         >
           <p className="font-medium">{VERIFICATION_BODY.name}</p>
-          <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+          <p className="text-slate-700 whitespace-pre-line text-xs print:text-[9px] mt-1">
             {VERIFICATION_BODY.address}
           </p>
         </Box>
@@ -142,7 +143,7 @@ export function TransactionCertificate({
             {sellerOrg?.name ?? certificate.seller_org_name_snapshot ?? '—'}
           </p>
           {sellerOrg?.address ? (
-            <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+            <p className="text-slate-700 whitespace-pre-line text-xs print:text-[9px] mt-1">
               {sellerOrg.address}
             </p>
           ) : null}
@@ -167,7 +168,7 @@ export function TransactionCertificate({
           span={6}
           minHeight="120px"
         >
-          {/* Derived from seller country — placeholder for now. */}
+          <p>{countryOfDispatch ?? '—'}</p>
         </Box>
 
         {/* Row 3: Box 5 — Input information (full width) */}
@@ -197,7 +198,7 @@ export function TransactionCertificate({
                   <Link
                     key={oc.id}
                     href={`/certificates/${oc.id}`}
-                    className="font-mono text-xs underline"
+                    className="font-mono text-xs print:text-[9px] underline"
                     style={{ color: '#063359' }}
                   >
                     {oc.certificate_number ?? '—'}
@@ -215,41 +216,46 @@ export function TransactionCertificate({
         <Box
           number={6}
           title="Product and Shipping Information"
-          subtitle="(Product Name, Production Date, Order/Shipping/Batch Number)"
+          subtitle="(Product Name, Sale Date, Order/Shipping Number)"
           span={8}
           minHeight="120px"
         >
-          <dl className="space-y-1.5">
+          <dl className="space-y-1.5 print:space-y-1">
             <div>
-              <dt className="inline text-xs text-slate-700">Product name: </dt>
-              <dd className="inline font-medium">
-                {batch?.output_product ?? lot?.product_name ?? '—'}
+              <dt className="inline text-xs print:text-[9px] text-slate-700">
+                Product name:{' '}
+              </dt>
+              <dd className="inline font-medium capitalize">
+                {batch?.output_product ??
+                  lot?.product_name ??
+                  certificate.commodity_type ??
+                  '—'}
               </dd>
             </div>
             <div>
-              <dt className="inline text-xs text-slate-700">Production date: </dt>
+              <dt className="inline text-xs print:text-[9px] text-slate-700">
+                Sale date:{' '}
+              </dt>
               <dd className="inline">
-                {formatDate(batch?.processing_date ?? null)}
+                {formatDate(certificate.sale_date_snapshot)}
               </dd>
             </div>
             <div>
-              <dt className="inline text-xs text-slate-700">Shipping number: </dt>
-              <dd className="inline font-mono text-xs">
+              <dt className="inline text-xs print:text-[9px] text-slate-700">
+                Order/Shipping Number:{' '}
+              </dt>
+              <dd className="inline font-mono text-xs print:text-[9px]">
                 {shippingNumber ?? '—'}
               </dd>
             </div>
             {lot?.code ? (
               <div>
-                <dt className="inline text-xs text-slate-700">Lot: </dt>
-                <dd className="inline font-mono text-xs">{lot.code}</dd>
-              </div>
-            ) : null}
-            {batch?.processing_method ? (
-              <div>
-                <dt className="inline text-xs text-slate-700">
-                  Processing method:{' '}
+                <dt className="inline text-xs print:text-[9px] text-slate-700">
+                  Lot:{' '}
                 </dt>
-                <dd className="inline">{batch.processing_method}</dd>
+                <dd className="inline font-mono text-xs print:text-[9px]">
+                  {lot.code}
+                </dd>
               </div>
             ) : null}
           </dl>
@@ -262,14 +268,9 @@ export function TransactionCertificate({
           span={4}
           minHeight="120px"
         >
-          <p className="font-medium text-base">
+          <p className="font-medium text-base print:text-[12px]">
             {formatVolume(certificate.volume, certificate.volume_unit)}
           </p>
-          {certificate.commodity_type ? (
-            <p className="text-xs text-slate-700 mt-1 capitalize">
-              {certificate.commodity_type}
-            </p>
-          ) : null}
         </Box>
       </CertificateChrome>
     </>

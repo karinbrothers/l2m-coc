@@ -33,9 +33,7 @@ type OriginCertificateData = {
   purchase_date: string | null;
   clip_year_snapshot: number | null;
   report_year_used: number | null;
-  /** Eligibility report ID (if you want to use a non-URL ID
-   *  in Box 3 instead of the URL). Optional — falls back to
-   *  the report URL if present. */
+  fibre_diameter_snapshot?: number | null;
   eligibility_report_id_snapshot?: string | null;
 };
 
@@ -53,11 +51,9 @@ function formatQuantity(q: number | null, unit: string | null) {
   return (q.toLocaleString() + ' ' + (unit ?? '')).trim();
 }
 
-// Land to Market verification body — the cert always lists L2M
-// as the verifier, with Savory Institute as the issuing body.
 const VERIFICATION_BODY = {
   name: 'Land to Market',
-  address: 'A program of the Savory Institute\n3550 Frontier Avenue, Unit B-2\nBoulder, CO 80301, USA',
+  address: '885 Arapahoe Ave\nBoulder, CO 80302\nUnited States',
 };
 
 export function OriginCertificate({
@@ -65,9 +61,6 @@ export function OriginCertificate({
   buyerOrg,
 }: {
   certificate: OriginCertificateData;
-  /** The first-stage processor / buyer of raw material — the
-   *  organisation that recorded the purchase. Pulled at page
-   *  level via a join on certificates.organization_id. */
   buyerOrg?: OrgLite;
 }) {
   const reportRef =
@@ -85,7 +78,7 @@ export function OriginCertificate({
         certificateId={certificate.certificate_number}
         issuedAt={certificate.issued_at}
       >
-        {/* Row 1: Boxes 1 + 2 (50/50) */}
+        {/* Row 1: Boxes 1 + 2 */}
         <Box
           number={1}
           title="Verification Body"
@@ -94,7 +87,7 @@ export function OriginCertificate({
           minHeight="120px"
         >
           <p className="font-medium">{VERIFICATION_BODY.name}</p>
-          <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+          <p className="text-slate-700 whitespace-pre-line text-xs print:text-[9px] mt-1">
             {VERIFICATION_BODY.address}
           </p>
         </Box>
@@ -108,7 +101,7 @@ export function OriginCertificate({
         >
           <p className="font-medium">{buyerOrg?.name ?? '—'}</p>
           {buyerOrg?.address ? (
-            <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+            <p className="text-slate-700 whitespace-pre-line text-xs print:text-[9px] mt-1">
               {buyerOrg.address}
             </p>
           ) : null}
@@ -166,8 +159,13 @@ export function OriginCertificate({
             {certificate.commodity_type ?? '—'}
           </p>
           {certificate.clip_year_snapshot ? (
-            <p className="text-xs text-slate-700 mt-1">
+            <p className="text-xs print:text-[9px] text-slate-700 mt-1">
               Clip year {certificate.clip_year_snapshot}
+            </p>
+          ) : null}
+          {certificate.fibre_diameter_snapshot ? (
+            <p className="text-xs print:text-[9px] text-slate-700 mt-0.5">
+              {Number(certificate.fibre_diameter_snapshot)} microns
             </p>
           ) : null}
         </Box>

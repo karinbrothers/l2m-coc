@@ -37,6 +37,8 @@ export async function createSale(formData: FormData) {
   const notes = String(formData.get('notes') ?? '').trim() || null
   const shippingNumber =
     String(formData.get('shipping_number') ?? '').trim() || null
+  const countryOfDispatch =
+    String(formData.get('country_of_dispatch') ?? '').trim() || null
 
   if (!inventoryLotId) redirect('/sales/new?error=missing_source')
   if (!buyerOrgId) redirect('/sales/new?error=missing_buyer_org')
@@ -81,10 +83,11 @@ export async function createSale(formData: FormData) {
     redirect('/sales/new?error=unknown')
   }
 
-  // record_sale doesn't accept shipping_number — set it via a
-  // SECURITY DEFINER RPC since direct UPDATE is blocked by RLS
-  // (sellers don't have a broad UPDATE policy on sales).
-  if (shippingNumber) {
+  // record_sale doesn't accept the optional dispatch fields —
+  // set them via a SECURITY DEFINER RPC since direct UPDATE is
+  // blocked by RLS (sellers don't have a broad UPDATE policy
+  // on sales).
+  if (shippingNumber || countryOfDispatch) {
     const { data: createdSale } = await supabase
       .from('sales')
       .select('id')
@@ -93,19 +96,20 @@ export async function createSale(formData: FormData) {
 
     if (createdSale?.id) {
       const { error: setErr } = await supabase.rpc(
-        'set_sale_shipping_number',
+        'set_sale_dispatch_info',
         {
           p_sale_id: createdSale.id,
-          p_shipping_number: shippingNumber,
+          p_shipping_number: shippingNumber ?? '',
+          p_country_of_dispatch: countryOfDispatch ?? '',
         },
       )
       if (setErr) {
         console.error(
-          '[createSale] set_sale_shipping_number error:',
+          '[createSale] set_sale_dispatch_info error:',
           setErr,
         )
-        // Non-fatal — the sale exists, only the optional field
-        // is missing. Surface in logs for follow-up.
+        // Non-fatal — the sale exists, only the optional fields
+        // are missing. Surface in logs for follow-up.
       }
     }
   }
