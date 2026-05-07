@@ -107,7 +107,7 @@ export function TransactionCertificate({
             className="text-sm font-medium hover:underline"
             style={{ color: '#063359' }}
           >
-            View full provenance trace →
+            View supply chain traceability →
           </Link>
         ) : null}
         <PrintButton />

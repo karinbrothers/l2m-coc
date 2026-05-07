@@ -208,10 +208,10 @@ export default async function InboxPage({ searchParams }: PageProps) {
                       className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
                       style={{ color: '#063359' }}
                     >
-                      Verify upstream provenance →
+                      View supply chain traceability →
                     </Link>
                     <p className="mt-1 text-xs text-slate-500">
-                      Click to see the full chain (lot, processing batch, source landbases) before deciding.
+                      See where this material came from before deciding.
                     </p>
                   </div>
                 </div>
