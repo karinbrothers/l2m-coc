@@ -90,6 +90,8 @@ export default async function RootLayout({
                     </p>
                   </div>
                   <Link href="/admin/invitations" className={linkClass}>Invitations</Link>
+                  <Link href="/admin/partners" className={linkClass}>Partners</Link>
+                  <Link href="/admin/activity" className={linkClass}>Supply chain activity</Link>
                   <Link href="/admin/salesforce/connect" className={linkClass}>Salesforce sync</Link>
                 </>
               ) : null}
