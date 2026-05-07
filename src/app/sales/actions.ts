@@ -81,16 +81,32 @@ export async function createSale(formData: FormData) {
     redirect('/sales/new?error=unknown')
   }
 
-  // record_sale doesn't accept shipping_number — patch it onto the
-  // newly-created sale row by code (codes are unique).
+  // record_sale doesn't accept shipping_number — set it via a
+  // SECURITY DEFINER RPC since direct UPDATE is blocked by RLS
+  // (sellers don't have a broad UPDATE policy on sales).
   if (shippingNumber) {
-    const { error: updateErr } = await supabase
+    const { data: createdSale } = await supabase
       .from('sales')
-      .update({ shipping_number: shippingNumber })
+      .select('id')
       .eq('code', code)
-    if (updateErr) {
-      console.error('[createSale] shipping_number update error:', updateErr)
-      // Non-fatal — the sale exists, only the optional field is missing.
+      .maybeSingle()
+
+    if (createdSale?.id) {
+      const { error: setErr } = await supabase.rpc(
+        'set_sale_shipping_number',
+        {
+          p_sale_id: createdSale.id,
+          p_shipping_number: shippingNumber,
+        },
+      )
+      if (setErr) {
+        console.error(
+          '[createSale] set_sale_shipping_number error:',
+          setErr,
+        )
+        // Non-fatal — the sale exists, only the optional field
+        // is missing. Surface in logs for follow-up.
+      }
     }
   }
 

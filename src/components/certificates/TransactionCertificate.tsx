@@ -232,16 +232,10 @@ export function TransactionCertificate({
                 {formatDate(batch?.processing_date ?? null)}
               </dd>
             </div>
-            {shippingNumber ? (
-              <div>
-                <dt className="inline text-xs text-slate-700">Shipping number: </dt>
-                <dd className="inline font-mono text-xs">{shippingNumber}</dd>
-              </div>
-            ) : null}
             <div>
-              <dt className="inline text-xs text-slate-700">Sale code: </dt>
+              <dt className="inline text-xs text-slate-700">Shipping number: </dt>
               <dd className="inline font-mono text-xs">
-                {certificate.sale_code ?? '—'}
+                {shippingNumber ?? '—'}
               </dd>
             </div>
             {lot?.code ? (
