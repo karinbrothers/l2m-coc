@@ -107,8 +107,7 @@ export function CertificateChrome({
                 </span>
               </p>
               <div>
-                {/* Signature image (replaces the old "Signature and
-                    name of authorised person" caption + line). */}
+                {/* Signature image */}
                 <div className="mb-2 max-w-[220px]">
                   <Image
                     src="/karin-signature.png"
@@ -119,10 +118,6 @@ export function CertificateChrome({
                   />
                 </div>
                 <div className="h-px bg-slate-300 max-w-xs"></div>
-                <p className="text-sm mt-2">
-                  <strong>Karin Brothers</strong>, Director of Verification,
-                  Land to Market
-                </p>
               </div>
             </div>
             <div className="px-6 py-4 flex items-end justify-end">

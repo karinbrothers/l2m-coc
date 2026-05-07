@@ -48,6 +48,7 @@ export type TransactionCertificateData = {
   certificate_origin_links: OriginLinkLite[] | null;
   sale: {
     code: string | null;
+    shipping_number: string | null;
     inventory_lot: {
       code: string | null;
       product_name: string | null;
@@ -88,15 +89,13 @@ export function TransactionCertificate({
   sellerOrg,
 }: {
   certificate: TransactionCertificateData;
-  /** The seller organisation — passed in from the page query
-   *  via certificates.organization_id. Address line renders only
-   *  when present, name falls back to the snapshot. */
   sellerOrg?: OrgLite;
 }) {
   const links = certificate.certificate_origin_links ?? [];
   const lot = certificate.sale?.inventory_lot ?? null;
   const batch = lot?.processing_batch ?? null;
   const traceCode = certificate.sale?.code ?? certificate.sale_code;
+  const shippingNumber = certificate.sale?.shipping_number ?? null;
 
   return (
     <>
@@ -160,8 +159,6 @@ export function TransactionCertificate({
           <p className="font-medium">
             {certificate.buyer_name_snapshot ?? '—'}
           </p>
-          {/* Buyer address placeholder — populated later if/when
-              we capture address per organisation. */}
         </Box>
 
         <Box
@@ -235,6 +232,12 @@ export function TransactionCertificate({
                 {formatDate(batch?.processing_date ?? null)}
               </dd>
             </div>
+            {shippingNumber ? (
+              <div>
+                <dt className="inline text-xs text-slate-700">Shipping number: </dt>
+                <dd className="inline font-mono text-xs">{shippingNumber}</dd>
+              </div>
+            ) : null}
             <div>
               <dt className="inline text-xs text-slate-700">Sale code: </dt>
               <dd className="inline font-mono text-xs">

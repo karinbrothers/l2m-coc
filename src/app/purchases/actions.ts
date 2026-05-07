@@ -112,10 +112,29 @@ export async function createPurchase(formData: FormData) {
     )
   }
 
+  // Mint an origin-certificate number via the SQL function so OC numbers
+  // follow the L2M-OC-YYYY-NNNN format consistently with TCs (which are
+  // numbered by the issue_tc_for_sale function in the database).
+  const { data: certNumberData, error: certNumberErr } = await supabase.rpc(
+    'generate_certificate_number',
+    { cert_type: 'origin' },
+  )
+
+  if (certNumberErr || !certNumberData) {
+    console.error(
+      '[createPurchase] generate_certificate_number failed:',
+      certNumberErr?.message,
+    )
+    // Fall back to the legacy format so we still issue *something*
+    // rather than silently dropping the cert.
+  }
+
+  const certificateNumber =
+    (certNumberData as string | null) ?? `OC-${newPurchase.code}`
+
   // Auto-generate the origin certificate for this purchase, with a full
   // snapshot of the landbase + purchase fields so the cert remains a faithful
   // record even if the underlying rows change later.
-  const certificateNumber = `OC-${newPurchase.code}`
   const { error: certErr } = await supabase.from('certificates').insert({
     certificate_number: certificateNumber,
     type: 'origin',

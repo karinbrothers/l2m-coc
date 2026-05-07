@@ -3,10 +3,7 @@
 // Loads a certificate plus the joined data each cert type needs:
 // origin certs link to the originating purchase via the existing
 // snapshot fields; transaction certs carry contributing OCs and
-// the sale chain. Org name/address is sourced from snapshot
-// fields where available — we deliberately don't join to the
-// organizations table here since not every cert variant has an
-// FK relationship set up.
+// the sale chain.
 
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
@@ -41,6 +38,7 @@ export default async function CertificateDetailPage({
       ),
       sale:sales!related_transaction_id (
         code,
+        shipping_number,
         inventory_lot:inventory_lot_id (
           code,
           product_name,

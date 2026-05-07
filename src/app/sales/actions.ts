@@ -35,6 +35,8 @@ export async function createSale(formData: FormData) {
     String(formData.get('sale_date') ?? '').trim() ||
     new Date().toISOString().slice(0, 10)
   const notes = String(formData.get('notes') ?? '').trim() || null
+  const shippingNumber =
+    String(formData.get('shipping_number') ?? '').trim() || null
 
   if (!inventoryLotId) redirect('/sales/new?error=missing_source')
   if (!buyerOrgId) redirect('/sales/new?error=missing_buyer_org')
@@ -77,6 +79,19 @@ export async function createSale(formData: FormData) {
       redirect('/sales/new?error=no_organization')
     }
     redirect('/sales/new?error=unknown')
+  }
+
+  // record_sale doesn't accept shipping_number — patch it onto the
+  // newly-created sale row by code (codes are unique).
+  if (shippingNumber) {
+    const { error: updateErr } = await supabase
+      .from('sales')
+      .update({ shipping_number: shippingNumber })
+      .eq('code', code)
+    if (updateErr) {
+      console.error('[createSale] shipping_number update error:', updateErr)
+      // Non-fatal — the sale exists, only the optional field is missing.
+    }
   }
 
   // TC is NOT issued here — it's issued when the buyer accepts the sale
