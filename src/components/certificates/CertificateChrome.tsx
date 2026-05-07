@@ -117,7 +117,10 @@ export function CertificateChrome({
                     className="object-contain"
                   />
                 </div>
-                <div className="h-px bg-slate-300 max-w-xs"></div>
+                <p className="text-sm">
+                  <strong>Karin Brothers</strong>, Director of Verification,
+                  Land to Market
+                </p>
               </div>
             </div>
             <div className="px-6 py-4 flex items-end justify-end">
