@@ -5,6 +5,15 @@ type PageProps = {
   params: Promise<{ code: string }>
 }
 
+type SaleChainEntry = {
+  sale_code: string
+  sale_date: string | null
+  volume: number
+  volume_unit: string
+  seller: { name: string }
+  buyer: { name: string }
+}
+
 type TraceData = {
   sale: {
     code: string
@@ -36,6 +45,7 @@ type TraceData = {
       certificate_number: string | null
     } | null
   }>
+  sale_chain: SaleChainEntry[]
   organization: {
     name: string
   }
@@ -80,6 +90,50 @@ function EligibilityBadge({ status }: { status: string }) {
   )
 }
 
+function SaleStep({
+  stepNumber,
+  sale,
+  isFinal,
+}: {
+  stepNumber: number
+  sale: SaleChainEntry
+  isFinal: boolean
+}) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Step {stepNumber} · {isFinal ? 'Final sale' : 'Sale'}
+      </div>
+      <div className="mt-2 font-mono text-base text-slate-900">
+        {sale.sale_code}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+        <span>
+          <span className="text-xs uppercase text-slate-500 mr-1">Seller</span>
+          <strong className="text-slate-900">{sale.seller.name}</strong>
+        </span>
+        <span className="text-slate-400">→</span>
+        <span>
+          <span className="text-xs uppercase text-slate-500 mr-1">Sold to</span>
+          <strong className="text-slate-900">{sale.buyer.name}</strong>
+        </span>
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Sale date</dt>
+          <dd className="mt-1 text-slate-900">{formatDate(sale.sale_date)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Volume</dt>
+          <dd className="mt-1 text-slate-900">
+            {sale.volume} {sale.volume_unit}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  )
+}
+
 export default async function TracePage({ params }: PageProps) {
   const { code } = await params
   const supabase = await createClient()
@@ -107,6 +161,7 @@ export default async function TracePage({ params }: PageProps) {
   const allEligible = trace.inputs.every(
     (i) => i.landbase.eligibility_status === 'eligible',
   )
+  const saleChain = trace.sale_chain ?? []
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -212,49 +267,19 @@ export default async function TracePage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* Step 2: The Sale */}
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Step 2 · Final sale
+      {/* Steps 2..N: each sale in chronological order */}
+      {saleChain.length > 0 ? (
+        <div className="space-y-4">
+          {saleChain.map((sale, idx) => (
+            <SaleStep
+              key={sale.sale_code}
+              stepNumber={idx + 2}
+              sale={sale}
+              isFinal={idx === saleChain.length - 1}
+            />
+          ))}
         </div>
-
-        <div className="mt-2 font-mono text-base text-slate-900">
-          {trace.sale.code}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-700">
-          <span>
-            <span className="text-xs uppercase text-slate-500 mr-1">
-              Seller
-            </span>
-            <strong className="text-slate-900">
-              {trace.organization.name}
-            </strong>
-          </span>
-          <span className="text-slate-400">→</span>
-          <span>
-            <span className="text-xs uppercase text-slate-500 mr-1">
-              Sold to
-            </span>
-            <strong className="text-slate-900">{trace.sale.buyer_name}</strong>
-          </span>
-        </div>
-
-        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
-          <div>
-            <dt className="text-xs uppercase text-slate-500">Sale date</dt>
-            <dd className="mt-1 text-slate-900">
-              {formatDate(trace.sale.sale_date)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase text-slate-500">Volume</dt>
-            <dd className="mt-1 text-slate-900">
-              {trace.sale.volume} {trace.sale.volume_unit}
-            </dd>
-          </div>
-        </dl>
-      </section>
+      ) : null}
 
       {/* Verification statement */}
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
