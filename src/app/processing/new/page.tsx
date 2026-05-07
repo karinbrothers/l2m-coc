@@ -91,30 +91,33 @@ export default async function NewProcessingBatchPage({
               Volume to draw from each source. Leave at 0 to skip.
             </p>
             <div className="mt-3 divide-y divide-slate-100 rounded-md border border-slate-200">
-              {options.map((p) => (
-                <div key={p.id} className="flex items-center gap-4 px-4 py-3">
-                  <div className="flex-1">
-                    <div className="font-mono text-xs text-slate-700">
-                      {p.code}
+              {options.map((p) => {
+                const remaining = `${Number(p.volume_remaining)} ${p.volume_unit} remaining`
+                const subline = p.landbases?.name
+                  ? `${p.landbases.name} — ${remaining}`
+                  : remaining
+                return (
+                  <div key={p.id} className="flex items-center gap-4 px-4 py-3">
+                    <div className="flex-1">
+                      <div className="font-mono text-xs text-slate-700">
+                        {p.code}
+                      </div>
+                      <div className="text-xs text-slate-500">{subline}</div>
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {p.landbases?.name ?? 'Unknown landbase'} —{' '}
-                      {Number(p.volume_remaining)} {p.volume_unit} remaining
-                    </div>
+                    <input
+                      name={`volume[${p.id}]`}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      className="w-32 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+                    />
+                    <span className="w-16 text-xs text-slate-500">
+                      {p.volume_unit}
+                    </span>
                   </div>
-                  <input
-                    name={`volume[${p.id}]`}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0"
-                    className="w-32 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-                  />
-                  <span className="w-16 text-xs text-slate-500">
-                    {p.volume_unit}
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
