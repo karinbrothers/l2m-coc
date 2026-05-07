@@ -1,9 +1,19 @@
+// src/components/certificates/OriginCertificate.tsx
+//
+// Renders the L2M Digital Origin Certificate in the official
+// industry format — numbered boxes, formal declaration, signature.
+
 import {
   CertificateChrome,
-  CertificateSection,
-  CertificateField,
+  Box,
+  InputTable,
 } from './CertificateChrome';
 import { PrintButton } from './PrintButton';
+
+type OrgLite = {
+  name: string | null;
+  address: string | null;
+} | null;
 
 type OriginCertificateData = {
   id: string;
@@ -23,6 +33,10 @@ type OriginCertificateData = {
   purchase_date: string | null;
   clip_year_snapshot: number | null;
   report_year_used: number | null;
+  /** Eligibility report ID (if you want to use a non-URL ID
+   *  in Box 3 instead of the URL). Optional — falls back to
+   *  the report URL if present. */
+  eligibility_report_id_snapshot?: string | null;
 };
 
 function formatDate(d: string | null) {
@@ -39,20 +53,27 @@ function formatQuantity(q: number | null, unit: string | null) {
   return (q.toLocaleString() + ' ' + (unit ?? '')).trim();
 }
 
+// Land to Market verification body — the cert always lists L2M
+// as the verifier, with Savory Institute as the issuing body.
+const VERIFICATION_BODY = {
+  name: 'Land to Market',
+  address: 'A program of the Savory Institute\n3550 Frontier Avenue, Unit B-2\nBoulder, CO 80301, USA',
+};
+
 export function OriginCertificate({
   certificate,
+  buyerOrg,
 }: {
   certificate: OriginCertificateData;
+  /** The first-stage processor / buyer of raw material — the
+   *  organisation that recorded the purchase. Pulled at page
+   *  level via a join on certificates.organization_id. */
+  buyerOrg?: OrgLite;
 }) {
-  // Status strip surfaces the headline verification fact: this
-  // certificate represents wool from a verified landbase, with
-  // eligibility valid through the snapshot expiration date.
-  const status = {
-    label: 'L2M Verified',
-    detail: certificate.expiration_date_snapshot
-      ? `Eligibility valid through ${formatDate(certificate.expiration_date_snapshot)}`
-      : 'Eligibility verified at issue',
-  };
+  const reportRef =
+    certificate.eligibility_report_id_snapshot ??
+    certificate.eligibility_report_url_snapshot ??
+    '—';
 
   return (
     <>
@@ -60,78 +81,111 @@ export function OriginCertificate({
         <PrintButton />
       </div>
       <CertificateChrome
-        title="Origin Certificate"
-        certificateNumber={certificate.certificate_number}
+        documentType="origin"
+        certificateId={certificate.certificate_number}
         issuedAt={certificate.issued_at}
-        status={status}
-        description="This certificate confirms the verified origin of regenerative material entering the Land to Market chain of custody."
       >
-        <CertificateSection title="Material">
-          <CertificateField label="Commodity">
-            {certificate.commodity_type ?? '—'}
-          </CertificateField>
-          <CertificateField label="Volume">
-            {formatQuantity(certificate.volume, certificate.volume_unit)}
-          </CertificateField>
-          <CertificateField label="Clip year">
-            {certificate.clip_year_snapshot != null
-              ? String(certificate.clip_year_snapshot)
-              : '—'}
-          </CertificateField>
-          <CertificateField label="Purchased">
-            {formatDate(certificate.purchase_date)}
-          </CertificateField>
-          <CertificateField label="Purchase reference" span={2}>
-            <span className="font-mono text-xs">
-              {certificate.purchase_code ?? '—'}
-            </span>
-          </CertificateField>
-        </CertificateSection>
+        {/* Row 1: Boxes 1 + 2 (50/50) */}
+        <Box
+          number={1}
+          title="Verification Body"
+          subtitle="(Name and Address)"
+          span={6}
+          minHeight="120px"
+        >
+          <p className="font-medium">{VERIFICATION_BODY.name}</p>
+          <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+            {VERIFICATION_BODY.address}
+          </p>
+        </Box>
 
-        <CertificateSection title="Origin landbase">
-          <CertificateField label="Name" span={2}>
-            <span className="text-base font-semibold">
-              {certificate.landbase_name_snapshot ?? '—'}
-            </span>
-            {certificate.country_snapshot ? (
-              <span className="text-sm font-normal text-slate-500 ml-2">
-                · {certificate.country_snapshot}
-              </span>
-            ) : null}
-          </CertificateField>
-        </CertificateSection>
-
-        <CertificateSection title="Eligibility snapshot at issue">
-          <CertificateField label="Monitored">
-            {formatDate(certificate.monitoring_date_snapshot)}
-          </CertificateField>
-          <CertificateField label="Verified">
-            {formatDate(certificate.verification_date_snapshot)}
-          </CertificateField>
-          <CertificateField label="Report year">
-            {certificate.report_year_used != null
-              ? String(certificate.report_year_used)
-              : '—'}
-          </CertificateField>
-          <CertificateField label="Status">
-            <span className="capitalize">
-              {certificate.eligibility_status_snapshot ?? '—'}
-            </span>
-          </CertificateField>
-          {certificate.eligibility_report_url_snapshot ? (
-            <CertificateField label="Eligibility report" span={2}>
-              <a
-                href={certificate.eligibility_report_url_snapshot}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium hover:underline"
-                style={{ color: '#063359' }}
-              >
-                View full eligibility report →
-              </a>
-            </CertificateField>
+        <Box
+          number={2}
+          title="First Stage Processor / Buyer of Raw Material"
+          subtitle="(Name and Address)"
+          span={6}
+          minHeight="120px"
+        >
+          <p className="font-medium">{buyerOrg?.name ?? '—'}</p>
+          {buyerOrg?.address ? (
+            <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+              {buyerOrg.address}
+            </p>
           ) : null}
-        </CertificateSection>
+        </Box>
+
+        {/* Row 2: Box 3 full width with input table */}
+        <Box
+          number={3}
+          title="Input Information"
+          span={12}
+          minHeight="auto"
+        >
+          <InputTable
+            headers={[
+              'Landbase Name',
+              'Landbase Eligibility Report',
+              'Purchase Date',
+              'Amount and Units',
+            ]}
+            rows={[
+              [
+                certificate.landbase_name_snapshot ?? '—',
+                reportRef && reportRef !== '—' ? (
+                  reportRef.startsWith('http') ? (
+                    <a
+                      href={reportRef}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                      style={{ color: '#063359' }}
+                    >
+                      View report
+                    </a>
+                  ) : (
+                    <span className="font-mono text-xs">{reportRef}</span>
+                  )
+                ) : (
+                  '—'
+                ),
+                formatDate(certificate.purchase_date),
+                formatQuantity(certificate.volume, certificate.volume_unit),
+              ],
+            ]}
+          />
+        </Box>
+
+        {/* Row 3: Boxes 4 + 5 + 6 (4/4/4) */}
+        <Box
+          number={4}
+          title="Verified Raw Material"
+          subtitle="(Name/Description)"
+          span={4}
+        >
+          <p className="capitalize">
+            {certificate.commodity_type ?? '—'}
+          </p>
+          {certificate.clip_year_snapshot ? (
+            <p className="text-xs text-slate-700 mt-1">
+              Clip year {certificate.clip_year_snapshot}
+            </p>
+          ) : null}
+        </Box>
+
+        <Box
+          number={5}
+          title="Total Verified Raw Material Weight"
+          subtitle="(Amount and Units)"
+          span={4}
+        >
+          <p className="font-medium">
+            {formatQuantity(certificate.volume, certificate.volume_unit)}
+          </p>
+        </Box>
+
+        <Box number={6} title="Country of Origin" span={4}>
+          <p>{certificate.country_snapshot ?? '—'}</p>
+        </Box>
       </CertificateChrome>
     </>
   );
