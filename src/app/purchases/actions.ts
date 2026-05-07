@@ -80,35 +80,52 @@ export async function createPurchase(formData: FormData) {
     redirect('/purchases/new?error=landbase_not_eligible')
   }
 
-  const code = await generateNextPurchaseCode(supabase, user.organization_id)
+  // Insert with retry-on-conflict. Two simultaneous submissions
+  // (e.g. a double-click or a Next.js double-fired action) can
+  // both compute the same "next" code from generateNextPurchaseCode,
+  // which then fails the unique constraint on the second insert.
+  // Up to 5 attempts with a freshly-computed code each time.
+  let newPurchase: { id: string; code: string } | null = null
+  let lastErr: { code?: string; message?: string } | null = null
+  let code = ''
 
-  // Insert the purchase and ask Postgres to return the new id so we can
-  // chain an origin-certificate insert against it.
-  const { data: newPurchase, error: insertErr } = await supabase
-    .from('raw_material_purchases')
-    .insert({
-      code,
-      organization_id: user.organization_id,
-      landbase_id: landbaseId,
-      volume,
-      volume_remaining: volume,
-      volume_unit: 'tonnes',
-      commodity_type: 'wool',
-      fibre_diameter: fibreDiameter,
-      year_of_clip: yearOfClip,
-      batch_number: batchNumber,
-      purchase_date: purchaseDate,
-    })
-    .select('id, code')
-    .single()
+  for (let attempt = 0; attempt < 5 && !newPurchase; attempt++) {
+    code = await generateNextPurchaseCode(supabase, user.organization_id)
+    const { data, error } = await supabase
+      .from('raw_material_purchases')
+      .insert({
+        code,
+        organization_id: user.organization_id,
+        landbase_id: landbaseId,
+        volume,
+        volume_remaining: volume,
+        volume_unit: 'tonnes',
+        commodity_type: 'wool',
+        fibre_diameter: fibreDiameter,
+        year_of_clip: yearOfClip,
+        batch_number: batchNumber,
+        purchase_date: purchaseDate,
+      })
+      .select('id, code')
+      .single()
 
-  if (insertErr || !newPurchase) {
-    console.error('[createPurchase]', insertErr?.message)
-    if (insertErr?.code === '23505') {
+    if (data) {
+      newPurchase = data
+      break
+    }
+    lastErr = error
+    // 23505 = unique_violation. Retry with a freshly-incremented
+    // code. Any other error is fatal.
+    if (error?.code !== '23505') break
+  }
+
+  if (!newPurchase) {
+    console.error('[createPurchase]', lastErr?.message)
+    if (lastErr?.code === '23505') {
       redirect('/purchases/new?error=code_conflict')
     }
     redirect(
-      `/purchases/new?error=${encodeURIComponent(insertErr?.message ?? 'insert_failed')}`,
+      `/purchases/new?error=${encodeURIComponent(lastErr?.message ?? 'insert_failed')}`,
     )
   }
 
