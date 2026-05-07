@@ -7,33 +7,14 @@ import { createClient } from '@/lib/supabase/server'
 
 async function generateNextPurchaseCode(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  organizationId: string,
 ): Promise<string> {
-  const year = new Date().getFullYear()
-  const prefix = `WOOL-${year}-`
-
-  const { data, error } = await supabase
-    .from('raw_material_purchases')
-    .select('code')
-    .eq('organization_id', organizationId)
-    .like('code', `${prefix}%`)
-    .order('code', { ascending: false })
-    .limit(1)
-
-  if (error) {
-    console.error('[generateNextPurchaseCode]', error.message)
+  // Atomic via Postgres sequence — see migration 43.
+  const { data, error } = await supabase.rpc('next_purchase_code')
+  if (error || !data) {
+    console.error('[next_purchase_code]', error?.message)
+    throw new Error('Could not generate purchase code')
   }
-
-  let nextSeq = 1
-  const last = data?.[0]?.code
-  if (last) {
-    const match = last.match(/-(\d+)$/)
-    if (match) {
-      nextSeq = parseInt(match[1], 10) + 1
-    }
-  }
-
-  return `${prefix}${String(nextSeq).padStart(4, '0')}`
+  return data as string
 }
 
 export async function createPurchase(formData: FormData) {
@@ -80,52 +61,30 @@ export async function createPurchase(formData: FormData) {
     redirect('/purchases/new?error=landbase_not_eligible')
   }
 
-  // Insert with retry-on-conflict. Two simultaneous submissions
-  // (e.g. a double-click or a Next.js double-fired action) can
-  // both compute the same "next" code from generateNextPurchaseCode,
-  // which then fails the unique constraint on the second insert.
-  // Up to 5 attempts with a freshly-computed code each time.
-  let newPurchase: { id: string; code: string } | null = null
-  let lastErr: { code?: string; message?: string } | null = null
-  let code = ''
+  const code = await generateNextPurchaseCode(supabase)
 
-  for (let attempt = 0; attempt < 5 && !newPurchase; attempt++) {
-    code = await generateNextPurchaseCode(supabase, user.organization_id)
-    const { data, error } = await supabase
-      .from('raw_material_purchases')
-      .insert({
-        code,
-        organization_id: user.organization_id,
-        landbase_id: landbaseId,
-        volume,
-        volume_remaining: volume,
-        volume_unit: 'tonnes',
-        commodity_type: 'wool',
-        fibre_diameter: fibreDiameter,
-        year_of_clip: yearOfClip,
-        batch_number: batchNumber,
-        purchase_date: purchaseDate,
-      })
-      .select('id, code')
-      .single()
+  const { data: newPurchase, error: insertErr } = await supabase
+    .from('raw_material_purchases')
+    .insert({
+      code,
+      organization_id: user.organization_id,
+      landbase_id: landbaseId,
+      volume,
+      volume_remaining: volume,
+      volume_unit: 'tonnes',
+      commodity_type: 'wool',
+      fibre_diameter: fibreDiameter,
+      year_of_clip: yearOfClip,
+      batch_number: batchNumber,
+      purchase_date: purchaseDate,
+    })
+    .select('id, code')
+    .single()
 
-    if (data) {
-      newPurchase = data
-      break
-    }
-    lastErr = error
-    // 23505 = unique_violation. Retry with a freshly-incremented
-    // code. Any other error is fatal.
-    if (error?.code !== '23505') break
-  }
-
-  if (!newPurchase) {
-    console.error('[createPurchase]', lastErr?.message)
-    if (lastErr?.code === '23505') {
-      redirect('/purchases/new?error=code_conflict')
-    }
+  if (insertErr || !newPurchase) {
+    console.error('[createPurchase]', insertErr?.message)
     redirect(
-      `/purchases/new?error=${encodeURIComponent(lastErr?.message ?? 'insert_failed')}`,
+      `/purchases/new?error=${encodeURIComponent(insertErr?.message ?? 'insert_failed')}`,
     )
   }
 
