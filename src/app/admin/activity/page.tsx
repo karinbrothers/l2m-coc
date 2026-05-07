@@ -1,71 +1,99 @@
 // src/app/admin/activity/page.tsx
 //
-// Global activity feed — every event across every organisation,
-// in chronological order. Lets admin watch supply chains in
-// motion: a purchase records, a batch processes, a sale sends,
-// a buyer accepts, a cert issues. One shared timeline.
+// Supply Chains — admin's primary "what's happening" view. Each
+// origin landbase purchase becomes a chain card, with every
+// downstream accepted sale rendered as a step (Engraw → Suedwolle
+// → Tessilbiella → Kering). Each step links to its certificate.
+// Chains sort by most-recent activity so live ones float up.
+//
+// Pending sales (not yet accepted by buyer) don't appear here
+// because TCs only issue on acceptance — they're tracked in the
+// chronological feed below the chain stack.
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-type Org = { name: string | null } | null
-
-type PurchaseRow = {
-  id: string
-  code: string
-  organization_id: string
-  organizations: Org
-  landbase_id: string | null
-  landbases: { name: string | null } | null
-  source_sale_id: string | null
-  source_sale: { code: string | null; seller: Org } | null
-  volume: number
-  volume_unit: string
-  created_at: string
-}
-
-type BatchRow = {
-  id: string
-  organization_id: string
-  organizations: Org
-  output_product: string | null
-  input_total_volume: number | null
-  output_volume: number | null
-  inventory_lots: { code: string }[] | null
-  created_at: string
-}
-
-type SaleRow = {
-  id: string
-  code: string
-  organization_id: string
-  organizations: Org
-  buyer_org: Org
-  buyer_name: string | null
-  volume: number
-  volume_unit: string | null
-  status: 'pending' | 'accepted' | 'rejected' | 'expired'
-  created_at: string
-  accepted_at: string | null
-  rejected_at: string | null
-}
-
-type CertRow = {
+type OcRow = {
   id: string
   certificate_number: string | null
-  type: string
   related_purchase_id: string | null
-  related_transaction_id: string | null
   issued_at: string
+  raw_material_purchases: {
+    id: string
+    code: string
+    purchase_date: string | null
+    volume: number
+    volume_unit: string
+    organizations: { name: string | null } | null
+    landbases: {
+      name: string | null
+      country: string | null
+      eligibility_status: string | null
+    } | null
+  } | null
 }
 
-type Event = {
-  ts: string
-  href: string
-  icon: string
-  summary: React.ReactNode
+type ChainTcRow = {
+  origin_certificate_id: string
+  volume_attributed: number | null
+  certificates: {
+    id: string
+    certificate_number: string | null
+    related_transaction_id: string | null
+    issued_at: string
+    sales: {
+      id: string
+      code: string
+      sale_date: string | null
+      volume: number
+      volume_unit: string | null
+      status: string
+      buyer_name: string | null
+      organizations: { name: string | null } | null
+      buyer_org: { name: string | null } | null
+      inventory_lot: { product_name: string | null } | null
+    } | null
+  } | null
+}
+
+type ChainStep = {
+  saleCode: string
+  saleDate: string | null
+  volume: number
+  volumeUnit: string | null
+  status: string
+  productName: string | null
+  sellerName: string
+  buyerName: string
+  tcId: string
+  tcNumber: string | null
+  tcIssuedAt: string
+}
+
+type Chain = {
+  ocId: string
+  ocNumber: string | null
+  purchaseCode: string
+  purchaseDate: string | null
+  fspName: string
+  landbaseName: string
+  landbaseCountry: string | null
+  eligibilityStatus: string
+  originVolume: number
+  volumeUnit: string
+  steps: ChainStep[]
+  latestActivityAt: string
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
 }
 
 function timeAgo(iso: string): string {
@@ -77,214 +105,308 @@ function timeAgo(iso: string): string {
   if (hr < 24) return `${hr}h ago`
   const day = Math.floor(hr / 24)
   if (day < 30) return `${day}d ago`
-  const month = Math.floor(day / 30)
-  return `${month}mo ago`
+  return `${Math.floor(day / 30)}mo ago`
 }
 
-export default async function AdminActivityPage() {
+function EligibilityBadge({ status }: { status: string }) {
+  const ok = status === 'eligible'
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+        ok
+          ? 'bg-emerald-100 text-emerald-800'
+          : 'bg-slate-100 text-slate-700'
+      }`}
+    >
+      <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path
+          fillRule="evenodd"
+          d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
+          clipRule="evenodd"
+        />
+      </svg>
+      {ok ? 'Eligible' : status}
+    </span>
+  )
+}
+
+export default async function AdminSupplyChainsPage() {
   const admin = createAdminClient()
 
-  const [
-    { data: purchases },
-    { data: batches },
-    { data: sales },
-    { data: certs },
-  ] = await Promise.all([
-    admin
-      .from('raw_material_purchases')
-      .select(
-        `id, code, organization_id, volume, volume_unit, created_at, landbase_id, source_sale_id,
-         organizations:organization_id(name),
-         landbases:landbase_id(name),
-         source_sale:sales!source_sale_id(code, seller:organization_id(name))`,
+  // 1. Every origin certificate in the system, with its underlying
+  //    purchase + landbase + FSP context.
+  const { data: ocsRaw } = await admin
+    .from('certificates')
+    .select(
+      `
+      id, certificate_number, related_purchase_id, issued_at,
+      raw_material_purchases:related_purchase_id (
+        id, code, purchase_date, volume, volume_unit,
+        organizations:organization_id (name),
+        landbases:landbase_id (name, country, eligibility_status)
       )
-      .order('created_at', { ascending: false })
-      .limit(80),
-    admin
-      .from('processing_batches')
-      .select(
-        `id, organization_id, output_product, input_total_volume, output_volume, created_at,
-         organizations:organization_id(name),
-         inventory_lots(code)`,
-      )
-      .order('created_at', { ascending: false })
-      .limit(80),
-    admin
-      .from('sales')
-      .select(
-        `id, code, organization_id, buyer_org_id, buyer_name, volume, volume_unit,
-         status, created_at, accepted_at, rejected_at,
-         organizations:organization_id(name),
-         buyer_org:buyer_org_id(name)`,
-      )
-      .order('created_at', { ascending: false })
-      .limit(80),
-    admin
-      .from('certificates')
-      .select(
-        'id, certificate_number, type, related_purchase_id, related_transaction_id, issued_at',
-      )
-      .order('issued_at', { ascending: false })
-      .limit(80),
-  ])
+      `,
+    )
+    .eq('type', 'origin')
+    .order('issued_at', { ascending: false })
 
-  const events: Event[] = []
+  const ocs = (ocsRaw ?? []) as unknown as OcRow[]
 
-  for (const p of (purchases ?? []) as unknown as PurchaseRow[]) {
-    const orgName = p.organizations?.name ?? 'an organisation'
-    const sourceLabel = p.landbase_id
-      ? `landbase ${p.landbases?.name ?? '—'}`
-      : `sale ${p.source_sale?.code ?? '—'} from ${p.source_sale?.seller?.name ?? '—'}`
-    events.push({
-      ts: p.created_at,
-      href: `/purchases`,
-      icon: '📦',
-      summary: (
-        <>
-          <strong>{orgName}</strong> recorded a purchase of{' '}
-          {Number(p.volume)} {p.volume_unit} from {sourceLabel}{' '}
-          <span className="font-mono text-xs text-slate-500">{p.code}</span>
-        </>
-      ),
-    })
+  // 2. Every TC linked to any of those OCs, with its sale context.
+  const ocIds = ocs.map((o) => o.id)
+  let tcs: ChainTcRow[] = []
+  if (ocIds.length > 0) {
+    const { data: tcsRaw } = await admin
+      .from('certificate_origin_links')
+      .select(
+        `
+        origin_certificate_id, volume_attributed,
+        certificates:transaction_certificate_id (
+          id, certificate_number, related_transaction_id, issued_at,
+          sales:related_transaction_id (
+            id, code, sale_date, volume, volume_unit, status, buyer_name,
+            organizations:organization_id (name),
+            buyer_org:buyer_org_id (name),
+            inventory_lot:inventory_lot_id (product_name)
+          )
+        )
+        `,
+      )
+      .in('origin_certificate_id', ocIds)
+    tcs = (tcsRaw ?? []) as unknown as ChainTcRow[]
   }
 
-  for (const b of (batches ?? []) as unknown as BatchRow[]) {
-    const orgName = b.organizations?.name ?? 'an organisation'
-    const lotCode = b.inventory_lots?.[0]?.code
-    events.push({
-      ts: b.created_at,
-      href: `/processing`,
-      icon: '🧶',
-      summary: (
-        <>
-          <strong>{orgName}</strong> processed{' '}
-          {b.input_total_volume != null ? Number(b.input_total_volume) : '—'} t
-          into {b.output_volume != null ? Number(b.output_volume) : '—'} t of{' '}
-          {b.output_product ?? '—'}
-          {lotCode ? (
-            <>
-              {' '}
-              <span className="font-mono text-xs text-slate-500">{lotCode}</span>
-            </>
-          ) : null}
-        </>
-      ),
-    })
-  }
+  // 3. Group TCs by origin OC, build chain cards.
+  const chains: Chain[] = []
+  for (const oc of ocs) {
+    const purchase = oc.raw_material_purchases
+    if (!purchase || !purchase.landbases) continue
 
-  for (const s of (sales ?? []) as unknown as SaleRow[]) {
-    const sellerName = s.organizations?.name ?? 'a seller'
-    const buyerName = s.buyer_org?.name ?? s.buyer_name ?? 'a buyer'
-
-    // Sale created
-    events.push({
-      ts: s.created_at,
-      href: `/sales`,
-      icon: '📤',
-      summary: (
-        <>
-          <strong>{sellerName}</strong> sent a sale of {Number(s.volume)}{' '}
-          {s.volume_unit ?? 't'} to <strong>{buyerName}</strong>{' '}
-          <span className="font-mono text-xs text-slate-500">{s.code}</span>
-        </>
-      ),
-    })
-
-    // Acceptance / rejection events
-    if (s.status === 'accepted' && s.accepted_at) {
-      events.push({
-        ts: s.accepted_at,
-        href: `/sales`,
-        icon: '✅',
-        summary: (
-          <>
-            <strong>{buyerName}</strong> accepted sale{' '}
-            <span className="font-mono text-xs">{s.code}</span> from{' '}
-            <strong>{sellerName}</strong>
-          </>
-        ),
-      })
-    } else if (s.status === 'rejected' && s.rejected_at) {
-      events.push({
-        ts: s.rejected_at,
-        href: `/sales`,
-        icon: '❌',
-        summary: (
-          <>
-            <strong>{buyerName}</strong> rejected sale{' '}
-            <span className="font-mono text-xs">{s.code}</span> from{' '}
-            <strong>{sellerName}</strong>
-          </>
-        ),
+    const tcsForThisOc = tcs.filter((t) => t.origin_certificate_id === oc.id)
+    const steps: ChainStep[] = []
+    for (const t of tcsForThisOc) {
+      const tc = t.certificates
+      const sale = tc?.sales
+      if (!tc || !sale) continue
+      steps.push({
+        saleCode: sale.code,
+        saleDate: sale.sale_date,
+        volume: sale.volume,
+        volumeUnit: sale.volume_unit,
+        status: sale.status,
+        productName: sale.inventory_lot?.product_name ?? null,
+        sellerName: sale.organizations?.name ?? '—',
+        buyerName: sale.buyer_org?.name ?? sale.buyer_name ?? '—',
+        tcId: tc.id,
+        tcNumber: tc.certificate_number,
+        tcIssuedAt: tc.issued_at,
       })
     }
-  }
+    // Sort steps by sale_date ascending so chain reads top-to-bottom
+    steps.sort((a, b) => {
+      const ax = a.saleDate ? new Date(a.saleDate).getTime() : 0
+      const bx = b.saleDate ? new Date(b.saleDate).getTime() : 0
+      return ax - bx
+    })
 
-  for (const c of (certs ?? []) as unknown as CertRow[]) {
-    events.push({
-      ts: c.issued_at,
-      href: `/certificates/${c.id}`,
-      icon: c.type === 'origin' ? '🌱' : '📜',
-      summary: (
-        <>
-          {c.type === 'origin' ? 'Origin' : 'Transaction'} certificate{' '}
-          <span className="font-mono text-xs">{c.certificate_number}</span>{' '}
-          issued
-        </>
-      ),
+    const latest =
+      steps.length > 0
+        ? steps[steps.length - 1].tcIssuedAt
+        : oc.issued_at
+
+    chains.push({
+      ocId: oc.id,
+      ocNumber: oc.certificate_number,
+      purchaseCode: purchase.code,
+      purchaseDate: purchase.purchase_date,
+      fspName: purchase.organizations?.name ?? '—',
+      landbaseName: purchase.landbases.name ?? '—',
+      landbaseCountry: purchase.landbases.country,
+      eligibilityStatus: purchase.landbases.eligibility_status ?? '—',
+      originVolume: purchase.volume,
+      volumeUnit: purchase.volume_unit,
+      steps,
+      latestActivityAt: latest,
     })
   }
 
-  events.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
-  const top = events.slice(0, 100)
+  // Most recently active chains first
+  chains.sort(
+    (a, b) =>
+      new Date(b.latestActivityAt).getTime() -
+      new Date(a.latestActivityAt).getTime(),
+  )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl">
       <div>
-        <div className="text-xs text-slate-500">
-          <Link href="/" className="hover:text-slate-700">
-            ← Back to dashboard
-          </Link>
-        </div>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">
-          Supply chain activity
-        </h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Supply chains</h1>
         <p className="mt-1 text-sm text-slate-600 max-w-2xl">
-          Every event across every organisation, newest first. Watch chains
-          unfold as partners record purchases, process batches, send sales,
-          and issue certificates.
+          Every chain in the system, from origin landbase forward through
+          every accepted sale. Most recently active chains appear first.
+          Sales that haven&apos;t been accepted yet don&apos;t appear here —
+          their TCs are issued on acceptance.
         </p>
       </div>
 
-      {top.length === 0 ? (
+      {chains.length === 0 ? (
         <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-500">
-          No activity yet.
+          No chains yet.
         </div>
       ) : (
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-          <ul className="divide-y divide-slate-100">
-            {top.map((e, i) => (
-              <li key={i} className="flex gap-3 px-5 py-3 text-sm">
-                <div
-                  className="shrink-0 select-none text-base leading-tight"
-                  aria-hidden
-                >
-                  {e.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-slate-700 leading-relaxed">
-                    <Link href={e.href} className="hover:underline">
-                      {e.summary}
-                    </Link>
+        <div className="space-y-8">
+          {chains.map((chain) => (
+            <article
+              key={chain.ocId}
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+            >
+              <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">
+                    Chain · originating purchase {chain.purchaseCode}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {timeAgo(e.ts)}
+                  <div className="mt-1 text-base text-slate-900">
+                    {chain.fspName} sourcing {chain.originVolume}{' '}
+                    {chain.volumeUnit} of greasy wool from{' '}
+                    <strong>{chain.landbaseName}</strong>
+                    {chain.landbaseCountry ? (
+                      <span className="text-slate-500">
+                        {' '}
+                        · {chain.landbaseCountry}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
-              </li>
-            ))}
-          </ul>
+                <div className="text-xs text-slate-500">
+                  Last activity {timeAgo(chain.latestActivityAt)}
+                </div>
+              </header>
+
+              <div className="space-y-3">
+                {/* Step 1: Origin landbase */}
+                <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-wrap items-baseline justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Step 1 · Origin landbase
+                    </div>
+                    <EligibilityBadge status={chain.eligibilityStatus} />
+                  </div>
+                  <div className="mt-2 text-lg font-semibold text-slate-900">
+                    {chain.landbaseName}
+                  </div>
+                  {chain.landbaseCountry ? (
+                    <div className="text-sm text-slate-600">
+                      {chain.landbaseCountry}
+                    </div>
+                  ) : null}
+                  <div className="mt-1 text-sm text-slate-600">
+                    Purchased by <strong>{chain.fspName}</strong>
+                  </div>
+
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-xs uppercase text-slate-500">
+                        Originally purchased
+                      </dt>
+                      <dd className="mt-0.5 text-slate-900">
+                        {formatDate(chain.purchaseDate)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase text-slate-500">
+                        Source purchase
+                      </dt>
+                      <dd className="mt-0.5 font-mono text-xs text-slate-900">
+                        {chain.purchaseCode}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {chain.ocNumber ? (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <Link
+                        href={`/certificates/${chain.ocId}`}
+                        className="text-sm font-medium hover:underline"
+                        style={{ color: '#063359' }}
+                      >
+                        View origin certificate {chain.ocNumber} →
+                      </Link>
+                    </div>
+                  ) : null}
+                </section>
+
+                {/* Steps 2..N: each sale */}
+                {chain.steps.map((step, idx) => {
+                  const isFinal = idx === chain.steps.length - 1
+                  return (
+                    <section
+                      key={step.saleCode}
+                      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Step {idx + 2} · {isFinal ? 'Latest sale' : 'Sale'}
+                      </div>
+                      <div className="mt-1.5 font-mono text-sm text-slate-900">
+                        {step.saleCode}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                        <span>
+                          <span className="text-xs uppercase text-slate-500 mr-1">
+                            Seller
+                          </span>
+                          <strong>{step.sellerName}</strong>
+                        </span>
+                        <span className="text-slate-400">→</span>
+                        <span>
+                          <span className="text-xs uppercase text-slate-500 mr-1">
+                            Sold to
+                          </span>
+                          <strong>{step.buyerName}</strong>
+                        </span>
+                      </div>
+                      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+                        <div>
+                          <dt className="text-xs uppercase text-slate-500">
+                            Product
+                          </dt>
+                          <dd className="mt-0.5 capitalize text-slate-900">
+                            {step.productName ?? '—'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs uppercase text-slate-500">
+                            Sale date
+                          </dt>
+                          <dd className="mt-0.5 text-slate-900">
+                            {formatDate(step.saleDate)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs uppercase text-slate-500">
+                            Volume
+                          </dt>
+                          <dd className="mt-0.5 text-slate-900">
+                            {step.volume} {step.volumeUnit ?? 't'}
+                          </dd>
+                        </div>
+                      </dl>
+                      {step.tcNumber ? (
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          <Link
+                            href={`/certificates/${step.tcId}`}
+                            className="text-sm font-medium hover:underline"
+                            style={{ color: '#063359' }}
+                          >
+                            View transaction certificate {step.tcNumber} →
+                          </Link>
+                        </div>
+                      ) : null}
+                    </section>
+                  )
+                })}
+              </div>
+            </article>
+          ))}
         </div>
       )}
     </div>
