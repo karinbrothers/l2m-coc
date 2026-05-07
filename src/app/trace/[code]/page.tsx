@@ -13,6 +13,10 @@ type SaleChainEntry = {
   product_name: string | null
   seller: { name: string }
   buyer: { name: string }
+  transaction_certificate: {
+    id: string
+    certificate_number: string | null
+  } | null
 }
 
 type TraceData = {
@@ -137,6 +141,18 @@ function SaleStep({
           </dd>
         </div>
       </dl>
+
+      {sale.transaction_certificate ? (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <Link
+            href={`/certificates/${sale.transaction_certificate.id}`}
+            className="inline-flex items-center gap-2 text-sm font-medium text-[#063359] hover:underline"
+          >
+            View transaction certificate{' '}
+            {sale.transaction_certificate.certificate_number} →
+          </Link>
+        </div>
+      ) : null}
     </section>
   )
 }
