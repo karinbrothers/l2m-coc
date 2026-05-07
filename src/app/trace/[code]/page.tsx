@@ -28,6 +28,9 @@ type TraceData = {
       country: string | null
       eligibility_status: string
     }
+    purchasing_org: {
+      name: string
+    } | null
     origin_certificate: {
       id: string
       certificate_number: string | null
@@ -41,7 +44,7 @@ type TraceData = {
 export async function generateMetadata({ params }: PageProps) {
   const { code } = await params
   return {
-    title: `Verified Provenance · ${code}`,
+    title: `Supply Chain Traceability Report · ${code}`,
     description: `Chain of custody trace for sale ${code}, verified by Land to Market.`,
   }
 }
@@ -110,12 +113,16 @@ export default async function TracePage({ params }: PageProps) {
       {/* Title + verification banner */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold text-slate-900">Verified Provenance</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            Supply Chain Traceability Report
+          </h1>
           <EligibilityBadge status={allEligible ? 'eligible' : 'mixed'} />
         </div>
         <p className="text-sm text-slate-600">
           Chain of custody for sale{' '}
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-800">{trace.sale.code}</code>
+          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-800">
+            {trace.sale.code}
+          </code>
           . Origin landbase verified, volume tracked end-to-end.
         </p>
       </div>
@@ -144,9 +151,17 @@ export default async function TracePage({ params }: PageProps) {
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <div>
-                    <div className="text-xl font-semibold text-slate-900">{lb.name}</div>
+                    <div className="text-xl font-semibold text-slate-900">
+                      {lb.name}
+                    </div>
                     {lb.country ? (
                       <div className="text-sm text-slate-600">{lb.country}</div>
+                    ) : null}
+                    {input.purchasing_org?.name ? (
+                      <div className="mt-1 text-sm text-slate-600">
+                        Purchased by{' '}
+                        <strong>{input.purchasing_org.name}</strong>
+                      </div>
                     ) : null}
                   </div>
                   <EligibilityBadge status={lb.eligibility_status} />
@@ -154,7 +169,9 @@ export default async function TracePage({ params }: PageProps) {
 
                 <dl className="mt-4 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
                   <div>
-                    <dt className="text-xs uppercase text-slate-500">Volume attributed</dt>
+                    <dt className="text-xs uppercase text-slate-500">
+                      Volume attributed
+                    </dt>
                     <dd className="mt-1 text-slate-900">
                       {input.volume_attributed != null
                         ? `${Number(input.volume_attributed).toFixed(2)} ${rp.volume_unit}`
@@ -162,12 +179,20 @@ export default async function TracePage({ params }: PageProps) {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs uppercase text-slate-500">Originally purchased</dt>
-                    <dd className="mt-1 text-slate-900">{formatDate(rp.purchase_date)}</dd>
+                    <dt className="text-xs uppercase text-slate-500">
+                      Originally purchased
+                    </dt>
+                    <dd className="mt-1 text-slate-900">
+                      {formatDate(rp.purchase_date)}
+                    </dd>
                   </div>
                   <div>
-                    <dt className="text-xs uppercase text-slate-500">Source purchase</dt>
-                    <dd className="mt-1 font-mono text-xs text-slate-900">{rp.code}</dd>
+                    <dt className="text-xs uppercase text-slate-500">
+                      Source purchase
+                    </dt>
+                    <dd className="mt-1 font-mono text-xs text-slate-900">
+                      {rp.code}
+                    </dd>
                   </div>
                 </dl>
 
@@ -190,26 +215,43 @@ export default async function TracePage({ params }: PageProps) {
       {/* Step 2: The Sale */}
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Step 2 · Sale
+          Step 2 · Final sale
         </div>
-        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
-          <div className="text-xl font-semibold text-slate-900">{trace.sale.code}</div>
-          <div className="text-sm text-slate-600">
-            Sold to <strong>{trace.sale.buyer_name}</strong>
-          </div>
+
+        <div className="mt-2 font-mono text-base text-slate-900">
+          {trace.sale.code}
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+          <span>
+            <span className="text-xs uppercase text-slate-500 mr-1">
+              Seller
+            </span>
+            <strong className="text-slate-900">
+              {trace.organization.name}
+            </strong>
+          </span>
+          <span className="text-slate-400">→</span>
+          <span>
+            <span className="text-xs uppercase text-slate-500 mr-1">
+              Sold to
+            </span>
+            <strong className="text-slate-900">{trace.sale.buyer_name}</strong>
+          </span>
+        </div>
+
         <dl className="mt-4 grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
           <div>
             <dt className="text-xs uppercase text-slate-500">Sale date</dt>
-            <dd className="mt-1 text-slate-900">{formatDate(trace.sale.sale_date)}</dd>
+            <dd className="mt-1 text-slate-900">
+              {formatDate(trace.sale.sale_date)}
+            </dd>
           </div>
           <div>
             <dt className="text-xs uppercase text-slate-500">Volume</dt>
-            <dd className="mt-1 text-slate-900">{trace.sale.volume} {trace.sale.volume_unit}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase text-slate-500">Seller</dt>
-            <dd className="mt-1 text-slate-900">{trace.organization.name}</dd>
+            <dd className="mt-1 text-slate-900">
+              {trace.sale.volume} {trace.sale.volume_unit}
+            </dd>
           </div>
         </dl>
       </section>
@@ -218,9 +260,10 @@ export default async function TracePage({ params }: PageProps) {
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
         <div className="font-semibold">Verified by Land to Market</div>
         <p className="mt-1 text-emerald-800">
-          The volume sold ({trace.sale.volume} {trace.sale.volume_unit}) is traced
-          back to the {trace.inputs.length === 1 ? 'origin landbase' : 'origin landbases'} above.
-          Mass balance is enforced at every transaction.
+          The volume sold ({trace.sale.volume} {trace.sale.volume_unit}) is
+          traced back to the{' '}
+          {trace.inputs.length === 1 ? 'origin landbase' : 'origin landbases'}{' '}
+          above. Mass balance is enforced at every transaction.
         </p>
         <p className="mt-2 text-xs text-emerald-800">
           Record holder: {trace.organization.name}

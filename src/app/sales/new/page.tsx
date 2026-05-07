@@ -218,9 +218,6 @@ export default async function NewSalePage({ searchParams }: PageProps) {
                 placeholder="Waybill, tracking, or order number"
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
               />
-              <p className="mt-1 text-xs text-slate-500">
-                Appears on the TC (Box 6).
-              </p>
             </div>
             <div>
               <label
@@ -236,9 +233,6 @@ export default async function NewSalePage({ searchParams }: PageProps) {
                 placeholder="e.g. Italy"
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
               />
-              <p className="mt-1 text-xs text-slate-500">
-                Where the goods are shipped from. TC Box 4.
-              </p>
             </div>
           </div>
 
