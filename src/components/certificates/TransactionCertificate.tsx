@@ -1,8 +1,14 @@
+// src/components/certificates/TransactionCertificate.tsx
+//
+// Renders the L2M Digital Transaction Certificate in the official
+// industry format — numbered boxes 1–7 plus the auto-rendered
+// declaration / signature / seal in the chrome.
+
 import Link from 'next/link';
 import {
   CertificateChrome,
-  CertificateSection,
-  CertificateField,
+  Box,
+  InputTable,
 } from './CertificateChrome';
 import { PrintButton } from './PrintButton';
 
@@ -50,6 +56,17 @@ export type TransactionCertificateData = {
   } | null;
 };
 
+type OrgLite = {
+  name: string | null;
+  address: string | null;
+} | null;
+
+const VERIFICATION_BODY = {
+  name: 'Land to Market',
+  address:
+    'A program of the Savory Institute\n3550 Frontier Avenue, Unit B-2\nBoulder, CO 80301, USA',
+};
+
 function formatDate(d: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-GB', {
@@ -61,18 +78,20 @@ function formatDate(d: string | null) {
 
 function formatVolume(v: number | null, unit: string | null) {
   if (v == null) return '—';
-  return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} ${unit ?? ''}`.trim();
-}
-
-function yieldPct(input: number | null, output: number | null): string {
-  if (input == null || output == null || Number(input) <= 0) return '—';
-  return `${Math.round((Number(output) / Number(input)) * 100)}%`;
+  return `${Number(v).toLocaleString('en-US', {
+    maximumFractionDigits: 2,
+  })} ${unit ?? ''}`.trim();
 }
 
 export function TransactionCertificate({
   certificate,
+  sellerOrg,
 }: {
   certificate: TransactionCertificateData;
+  /** The seller organisation — passed in from the page query
+   *  via certificates.organization_id. Address line renders only
+   *  when present, name falls back to the snapshot. */
+  sellerOrg?: OrgLite;
 }) {
   const links = certificate.certificate_origin_links ?? [];
   const lot = certificate.sale?.inventory_lot ?? null;
@@ -81,132 +100,180 @@ export function TransactionCertificate({
 
   return (
     <>
-      <div className="mb-4 flex justify-end print:hidden">
+      <div className="mb-4 flex items-center justify-end gap-3 print:hidden">
+        {traceCode ? (
+          <Link
+            href={`/trace/${traceCode}`}
+            className="text-sm font-medium hover:underline"
+            style={{ color: '#063359' }}
+          >
+            View full provenance trace →
+          </Link>
+        ) : null}
         <PrintButton />
       </div>
+
       <CertificateChrome
-        title="Transaction Certificate"
-        certificateNumber={certificate.certificate_number}
+        documentType="transaction"
+        certificateId={certificate.certificate_number}
         issuedAt={certificate.issued_at}
-        description="This certificate documents a verified transaction within the Land to Market chain of custody. The volume below was drawn from the source materials listed at the bottom."
       >
-        <CertificateSection title="Material">
-          <CertificateField label="Commodity">
-            {certificate.commodity_type ?? '—'}
-          </CertificateField>
-          <CertificateField label="Volume">
-            {formatVolume(certificate.volume, certificate.volume_unit)}
-          </CertificateField>
-          <CertificateField label="Sale date">
-            {formatDate(certificate.sale_date_snapshot)}
-          </CertificateField>
-          <CertificateField label="Sale code">
-            {certificate.sale_code ?? '—'}
-          </CertificateField>
-        </CertificateSection>
+        {/* Row 1: Boxes 1 + 2 */}
+        <Box
+          number={1}
+          title="Verification Body"
+          subtitle="(Name and Address)"
+          span={6}
+          minHeight="120px"
+        >
+          <p className="font-medium">{VERIFICATION_BODY.name}</p>
+          <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+            {VERIFICATION_BODY.address}
+          </p>
+        </Box>
 
-        <CertificateSection title="Parties">
-          <CertificateField label="Seller">
-            {certificate.seller_org_name_snapshot ?? '—'}
-          </CertificateField>
-          <CertificateField label="Buyer">
+        <Box
+          number={2}
+          title="Seller of Verified Products"
+          subtitle="(Name and Address)"
+          span={6}
+          minHeight="120px"
+        >
+          <p className="font-medium">
+            {sellerOrg?.name ?? certificate.seller_org_name_snapshot ?? '—'}
+          </p>
+          {sellerOrg?.address ? (
+            <p className="text-slate-700 whitespace-pre-line text-xs mt-1">
+              {sellerOrg.address}
+            </p>
+          ) : null}
+        </Box>
+
+        {/* Row 2: Boxes 3 + 4 */}
+        <Box
+          number={3}
+          title="Buyer of Verified Products"
+          subtitle="(Name and Address of Ultimate Consignee)"
+          span={6}
+          minHeight="120px"
+        >
+          <p className="font-medium">
             {certificate.buyer_name_snapshot ?? '—'}
-          </CertificateField>
-        </CertificateSection>
+          </p>
+          {/* Buyer address placeholder — populated later if/when
+              we capture address per organisation. */}
+        </Box>
 
-        {batch ? (
-          <CertificateSection title="Processing">
-            <CertificateField label="Output product">
-              {batch.output_product ?? lot?.product_name ?? '—'}
-            </CertificateField>
-            <CertificateField label="Lot code">
-              {lot?.code ?? '—'}
-            </CertificateField>
-            <CertificateField label="Processed">
-              {formatDate(batch.processing_date)}
-            </CertificateField>
-            <CertificateField label="Method">
-              {batch.processing_method ?? '—'}
-            </CertificateField>
-            <CertificateField label="Input volume">
-              {formatVolume(batch.input_total_volume, certificate.volume_unit)}
-            </CertificateField>
-            <CertificateField label="Output volume">
-              {formatVolume(batch.output_volume, certificate.volume_unit)}
-            </CertificateField>
-            <CertificateField label="Yield">
-              {yieldPct(batch.input_total_volume, batch.output_volume)}
-            </CertificateField>
-            <CertificateField label="Processed by">
-              {batch.subcontractors ?? '—'}
-            </CertificateField>
-          </CertificateSection>
-        ) : null}
+        <Box
+          number={4}
+          title="Country of Dispatch"
+          span={6}
+          minHeight="120px"
+        >
+          {/* Derived from seller country — placeholder for now. */}
+        </Box>
 
-        <CertificateSection title="Source materials">
-          <div className="col-span-2 space-y-2">
-            {links.length === 0 ? (
-              <div className="text-xs text-slate-500 italic">
-                No linked origin certificates.
-              </div>
-            ) : (
-              links.map((link) => {
+        {/* Row 3: Box 5 — Input information (full width) */}
+        <Box
+          number={5}
+          title="Input Information"
+          subtitle="(Input Digital Origin Certificate ID or Digital Transaction Certificate ID)"
+          span={12}
+          minHeight="auto"
+        >
+          {links.length === 0 ? (
+            <p className="text-slate-500 italic">
+              No linked origin certificates.
+            </p>
+          ) : (
+            <InputTable
+              headers={[
+                'Certificate ID',
+                'Landbase',
+                'Country',
+                'Volume Attributed',
+              ]}
+              rows={links.map((link) => {
                 const oc = link.origin_certificate;
-                if (!oc) return null;
-                return (
+                if (!oc) return ['—', '—', '—', '—'];
+                return [
                   <Link
-                    key={link.id}
+                    key={oc.id}
                     href={`/certificates/${oc.id}`}
-                    className="block rounded border border-slate-200 px-4 py-3 hover:border-[#063359] hover:bg-slate-50 transition-colors"
+                    className="font-mono text-xs underline"
+                    style={{ color: '#063359' }}
                   >
-                    <div className="flex items-baseline justify-between gap-4">
-                      <div className="font-mono text-xs text-[#063359]">
-                        {oc.certificate_number ?? '—'}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {formatVolume(link.volume_attributed, certificate.volume_unit)}
-                      </div>
-                    </div>
-                    <div className="text-sm text-slate-800 mt-1">
-                      {oc.landbase_name_snapshot ?? '—'}
-                      {oc.country_snapshot ? (
-                        <span className="text-slate-500"> · {oc.country_snapshot}</span>
-                      ) : null}
-                    </div>
-                    {oc.purchase_code && (
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        Source purchase: <span className="font-mono">{oc.purchase_code}</span>
-                      </div>
-                    )}
-                  </Link>
-                );
-              })
-            )}
-          </div>
-        </CertificateSection>
+                    {oc.certificate_number ?? '—'}
+                  </Link>,
+                  oc.landbase_name_snapshot ?? '—',
+                  oc.country_snapshot ?? '—',
+                  formatVolume(link.volume_attributed, certificate.volume_unit),
+                ];
+              })}
+            />
+          )}
+        </Box>
 
-        {traceCode ? (
-          <div className="col-span-2 mt-2 border-t border-slate-100 pt-4 print:hidden">
-            <Link
-              href={`/trace/${traceCode}`}
-              className="inline-flex items-center gap-2 text-sm font-medium hover:underline"
-              style={{ color: '#063359' }}
-            >
-              View full provenance trace
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </Link>
-          </div>
-        ) : null}
+        {/* Row 4: Boxes 6 + 7 (8/4 split per template) */}
+        <Box
+          number={6}
+          title="Product and Shipping Information"
+          subtitle="(Product Name, Production Date, Order/Shipping/Batch Number)"
+          span={8}
+          minHeight="120px"
+        >
+          <dl className="space-y-1.5">
+            <div>
+              <dt className="inline text-xs text-slate-700">Product name: </dt>
+              <dd className="inline font-medium">
+                {batch?.output_product ?? lot?.product_name ?? '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline text-xs text-slate-700">Production date: </dt>
+              <dd className="inline">
+                {formatDate(batch?.processing_date ?? null)}
+              </dd>
+            </div>
+            <div>
+              <dt className="inline text-xs text-slate-700">Sale code: </dt>
+              <dd className="inline font-mono text-xs">
+                {certificate.sale_code ?? '—'}
+              </dd>
+            </div>
+            {lot?.code ? (
+              <div>
+                <dt className="inline text-xs text-slate-700">Lot: </dt>
+                <dd className="inline font-mono text-xs">{lot.code}</dd>
+              </div>
+            ) : null}
+            {batch?.processing_method ? (
+              <div>
+                <dt className="inline text-xs text-slate-700">
+                  Processing method:{' '}
+                </dt>
+                <dd className="inline">{batch.processing_method}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </Box>
+
+        <Box
+          number={7}
+          title="Verified Product Weight"
+          subtitle="(Amount and Units)"
+          span={4}
+          minHeight="120px"
+        >
+          <p className="font-medium text-base">
+            {formatVolume(certificate.volume, certificate.volume_unit)}
+          </p>
+          {certificate.commodity_type ? (
+            <p className="text-xs text-slate-700 mt-1 capitalize">
+              {certificate.commodity_type}
+            </p>
+          ) : null}
+        </Box>
       </CertificateChrome>
     </>
   );
