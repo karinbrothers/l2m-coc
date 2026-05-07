@@ -3,6 +3,10 @@
 // Renders the L2M Digital Transaction Certificate in the official
 // industry format — numbered boxes 1–7 plus the auto-rendered
 // declaration / signature / seal in the chrome.
+//
+// Box 5 (Input Information) lists the IMMEDIATE upstream certs
+// — the OC for direct landbase purchases, the TC for received
+// purchases — passed in as the immediateInputs prop.
 
 import Link from 'next/link';
 import {
@@ -12,16 +16,13 @@ import {
 } from './CertificateChrome';
 import { PrintButton } from './PrintButton';
 
-export type OriginLinkLite = {
-  id: string;
-  volume_attributed: number | null;
-  origin_certificate: {
-    id: string;
-    certificate_number: string | null;
-    purchase_code: string | null;
-    landbase_name_snapshot: string | null;
-    country_snapshot: string | null;
-  } | null;
+export type ImmediateInput = {
+  type: 'origin' | 'transaction';
+  cert_id: string | null;
+  cert_number: string | null;
+  source_label: string | null;
+  volume_used: number | null;
+  volume_unit: string | null;
 };
 
 export type ProcessingBatchLite = {
@@ -45,7 +46,6 @@ export type TransactionCertificateData = {
   volume_unit: string | null;
   commodity_type: string | null;
   purchase_code: string | null;
-  certificate_origin_links: OriginLinkLite[] | null;
   sale: {
     code: string | null;
     shipping_number: string | null;
@@ -87,11 +87,12 @@ function formatVolume(v: number | null, unit: string | null) {
 export function TransactionCertificate({
   certificate,
   sellerOrg,
+  immediateInputs = [],
 }: {
   certificate: TransactionCertificateData;
   sellerOrg?: OrgLite;
+  immediateInputs?: ImmediateInput[];
 }) {
-  const links = certificate.certificate_origin_links ?? [];
   const lot = certificate.sale?.inventory_lot ?? null;
   const batch = lot?.processing_batch ?? null;
   const traceCode = certificate.sale?.code ?? certificate.sale_code;
@@ -171,7 +172,7 @@ export function TransactionCertificate({
           <p>{countryOfDispatch ?? '—'}</p>
         </Box>
 
-        {/* Row 3: Box 5 — Input information (full width) */}
+        {/* Row 3: Box 5 — Input information (immediate upstream) */}
         <Box
           number={5}
           title="Input Information"
@@ -179,35 +180,37 @@ export function TransactionCertificate({
           span={12}
           minHeight="auto"
         >
-          {links.length === 0 ? (
+          {immediateInputs.length === 0 ? (
             <p className="text-slate-500 italic">
-              No linked origin certificates.
+              No linked input certificates.
             </p>
           ) : (
             <InputTable
               headers={[
                 'Certificate ID',
-                'Landbase',
-                'Country',
-                'Volume Attributed',
+                'Type',
+                'Source',
+                'Volume Used',
               ]}
-              rows={links.map((link) => {
-                const oc = link.origin_certificate;
-                if (!oc) return ['—', '—', '—', '—'];
-                return [
+              rows={immediateInputs.map((input, i) => [
+                input.cert_id ? (
                   <Link
-                    key={oc.id}
-                    href={`/certificates/${oc.id}`}
+                    key={input.cert_id}
+                    href={`/certificates/${input.cert_id}`}
                     className="font-mono text-xs print:text-[9px] underline"
                     style={{ color: '#063359' }}
                   >
-                    {oc.certificate_number ?? '—'}
-                  </Link>,
-                  oc.landbase_name_snapshot ?? '—',
-                  oc.country_snapshot ?? '—',
-                  formatVolume(link.volume_attributed, certificate.volume_unit),
-                ];
-              })}
+                    {input.cert_number ?? '—'}
+                  </Link>
+                ) : (
+                  <span key={`missing-${i}`} className="text-slate-400">
+                    —
+                  </span>
+                ),
+                input.type === 'origin' ? 'Origin' : 'Transaction',
+                input.source_label ?? '—',
+                formatVolume(input.volume_used, input.volume_unit),
+              ])}
             />
           )}
         </Box>

@@ -205,80 +205,73 @@ export default async function TracePage({ params }: PageProps) {
         </p>
       </div>
 
-      {/* Step 1: Origin landbase(s) */}
-      <section>
-        <div className="mb-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-[#063359]">
-            Step 1 · Origin landbase{trace.inputs.length > 1 ? 's' : ''}
-          </div>
-          {trace.inputs.length > 1 ? (
-            <div className="mt-1 text-sm text-slate-600">
-              {trace.inputs.length} landbases contributed to this sale
-            </div>
-          ) : null}
-        </div>
-        <div className="space-y-3">
-          {trace.inputs.map((input, idx) => {
-            const lb = input.landbase
-            const oc = input.origin_certificate
-            const rp = input.raw_purchase
-            return (
-              <div
-                key={`${rp.code}-${idx}`}
-                className="rounded-lg border-2 border-[#063359]/20 bg-white p-6 shadow-sm"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <div>
-                    <div className="text-xl font-semibold text-slate-900">
-                      {lb.name}
-                    </div>
-                    {lb.country ? (
-                      <div className="text-sm text-slate-600">{lb.country}</div>
-                    ) : null}
-                    {input.purchasing_org?.name ? (
-                      <div className="mt-1 text-sm text-slate-600">
-                        Purchased by{' '}
-                        <strong>{input.purchasing_org.name}</strong>
-                      </div>
-                    ) : null}
-                  </div>
-                  <EligibilityBadge status={lb.eligibility_status} />
-                </div>
-
-                <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">
-                      Originally purchased
-                    </dt>
-                    <dd className="mt-1 text-slate-900">
-                      {formatDate(rp.purchase_date)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">
-                      Source purchase
-                    </dt>
-                    <dd className="mt-1 font-mono text-xs text-slate-900">
-                      {rp.code}
-                    </dd>
-                  </div>
-                </dl>
-
-                {oc ? (
-                  <div className="mt-4 border-t border-slate-100 pt-3">
-                    <Link
-                      href={`/certificates/${oc.id}`}
-                      className="inline-flex items-center gap-2 text-sm font-medium text-[#063359] hover:underline"
-                    >
-                      View origin certificate {oc.certificate_number} →
-                    </Link>
-                  </div>
-                ) : null}
+      {/* Step 1: Origin landbase(s) — header inside each tile to
+          match the styling of the sale steps below. */}
+      <div className="space-y-4">
+        {trace.inputs.map((input, idx) => {
+          const lb = input.landbase
+          const oc = input.origin_certificate
+          const rp = input.raw_purchase
+          return (
+            <section
+              key={`${rp.code}-${idx}`}
+              className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Step 1 · Origin landbase
               </div>
-            )
-          })}
-        </div>
-      </section>
+
+              <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
+                <div>
+                  <div className="text-xl font-semibold text-slate-900">
+                    {lb.name}
+                  </div>
+                  {lb.country ? (
+                    <div className="text-sm text-slate-600">{lb.country}</div>
+                  ) : null}
+                  {input.purchasing_org?.name ? (
+                    <div className="mt-1 text-sm text-slate-600">
+                      Purchased by{' '}
+                      <strong>{input.purchasing_org.name}</strong>
+                    </div>
+                  ) : null}
+                </div>
+                <EligibilityBadge status={lb.eligibility_status} />
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="text-xs uppercase text-slate-500">
+                    Originally purchased
+                  </dt>
+                  <dd className="mt-1 text-slate-900">
+                    {formatDate(rp.purchase_date)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase text-slate-500">
+                    Source purchase
+                  </dt>
+                  <dd className="mt-1 font-mono text-xs text-slate-900">
+                    {rp.code}
+                  </dd>
+                </div>
+              </dl>
+
+              {oc ? (
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <Link
+                    href={`/certificates/${oc.id}`}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#063359] hover:underline"
+                  >
+                    View origin certificate {oc.certificate_number} →
+                  </Link>
+                </div>
+              ) : null}
+            </section>
+          )
+        })}
+      </div>
 
       {/* Steps 2..N: each sale in chronological order */}
       {saleChain.length > 0 ? (

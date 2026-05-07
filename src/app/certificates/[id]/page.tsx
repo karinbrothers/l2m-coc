@@ -1,14 +1,17 @@
 // src/app/certificates/[id]/page.tsx
 //
-// Loads a certificate plus the joined data each cert type needs:
-// origin certs link to the originating purchase via the existing
-// snapshot fields; transaction certs carry contributing OCs and
-// the sale chain.
+// Loads a certificate plus the joined data each cert type needs.
+// For TCs we additionally call get_tc_immediate_inputs to render
+// "Input Information" as the immediate upstream cert(s) — not
+// the landbase OCs at the bottom of the chain.
 
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { OriginCertificate } from '@/components/certificates/OriginCertificate';
-import { TransactionCertificate } from '@/components/certificates/TransactionCertificate';
+import {
+  TransactionCertificate,
+  type ImmediateInput,
+} from '@/components/certificates/TransactionCertificate';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +61,23 @@ export default async function CertificateDetailPage({
     .eq('id', id)
     .maybeSingle();
 
+  // For TCs, also fetch the IMMEDIATE upstream inputs (the cert
+  // before this one in the chain). For an FSP's TC, those are
+  // landbase OCs; for any later-stage TC, they're the upstream
+  // partner's TCs.
+  let immediateInputs: ImmediateInput[] = [];
+  if (cert && cert.type === 'transaction') {
+    const { data, error: rpcErr } = await supabase.rpc(
+      'get_tc_immediate_inputs',
+      { p_tc_id: id },
+    );
+    if (rpcErr) {
+      console.error('[cert page] get_tc_immediate_inputs error:', rpcErr);
+    } else if (Array.isArray(data)) {
+      immediateInputs = data as ImmediateInput[];
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-4 print:hidden">
@@ -84,7 +104,10 @@ export default async function CertificateDetailPage({
         <OriginCertificate certificate={cert} />
       )}
       {cert && cert.type === 'transaction' && (
-        <TransactionCertificate certificate={cert} />
+        <TransactionCertificate
+          certificate={cert}
+          immediateInputs={immediateInputs}
+        />
       )}
       {cert && cert.type !== 'origin' && cert.type !== 'transaction' && (
         <p className="text-sm text-gray-500">
