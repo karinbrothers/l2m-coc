@@ -1,22 +1,9 @@
 // src/components/certificates/CertificateChrome.tsx
 //
 // Industry-standard L2M certificate format: numbered boxes in a
-// black-on-white grid, formal declaration block, signature line,
-// and round Verified seal — modeled on the official L2M Digital
-// Origin and Transaction Certificate templates.
-//
-// Composition:
-//   <CertificateChrome documentType="origin" certificateId="..." issuedAt="...">
-//     <Box span={6} number={1} title="Verification Body" subtitle="(Name and Address)">…</Box>
-//     <Box span={6} number={2} title="..." subtitle="...">…</Box>
-//     <Box span={12} number={3} title="Input Information">…</Box>
-//     ...
-//   </CertificateChrome>
-//
-// The chrome itself renders the top ID strip, the centered title,
-// and the closing Declaration / Date of Issue / Signature / Seal
-// block automatically. The cert components only need to render
-// the body boxes.
+// black-on-white grid, formal declaration block, signature, and
+// round Verified seal — modeled on the official L2M Digital Origin
+// and Transaction Certificate templates.
 
 import Image from 'next/image';
 import type { ReactNode } from 'react';
@@ -74,21 +61,21 @@ export function CertificateChrome({
       data-cert-print
       className="bg-white text-slate-900 max-w-[860px] mx-auto my-8 p-10 print:max-w-none print:mx-0 print:my-0 print:p-6 print:shadow-none"
     >
-      {/* Top strip: logo + Certificate ID */}
-      <div className="grid grid-cols-[140px_1fr_1fr] border-t border-l border-slate-900 mb-6">
-        <div className="border-r border-b border-slate-900 p-3 flex items-center justify-center">
+      {/* Top strip: logo + Certificate ID — compact height */}
+      <div className="grid grid-cols-[120px_1fr_1fr] border-t border-l border-slate-900 mb-6">
+        <div className="border-r border-b border-slate-900 px-3 py-2 flex items-center justify-center">
           <Image
             src="/l2m-logo-navy.svg"
             alt="Land to Market"
-            width={100}
-            height={64}
+            width={80}
+            height={44}
             priority
           />
         </div>
-        <div className="border-r border-b border-slate-900 px-4 py-3 flex items-center text-sm">
+        <div className="border-r border-b border-slate-900 px-4 py-2 flex items-center text-sm">
           Digital {documentType === 'origin' ? 'Origin' : 'Transaction'} Certificate ID:
         </div>
-        <div className="border-r border-b border-slate-900 px-4 py-3 flex items-center font-mono text-sm">
+        <div className="border-r border-b border-slate-900 px-4 py-2 flex items-center font-mono text-sm">
           {certificateId ?? '—'}
         </div>
       </div>
@@ -98,9 +85,7 @@ export function CertificateChrome({
         {TITLES[documentType]}
       </h1>
 
-      {/* Body grid — single border surface so adjacent boxes
-          share a 1px line, never doubling. Children render
-          col-span-N boxes with right + bottom borders. */}
+      {/* Body grid — single border surface */}
       <div className="grid grid-cols-12 border-t border-l border-slate-900">
         {children}
 
@@ -114,7 +99,7 @@ export function CertificateChrome({
             <p className="text-sm leading-relaxed">{declaration.p2}</p>
           </div>
           <div className="flex items-stretch">
-            <div className="flex-1 px-4 py-4 space-y-5">
+            <div className="flex-1 px-4 py-4 space-y-4">
               <p className="text-sm">
                 <span>Date of Issue: </span>
                 <span className="font-medium">
@@ -122,11 +107,19 @@ export function CertificateChrome({
                 </span>
               </p>
               <div>
-                <p className="text-sm mb-3">
-                  Signature and name of authorised person:
-                </p>
-                <div className="h-px bg-slate-300 max-w-xs my-3"></div>
-                <p className="text-sm">
+                {/* Signature image (replaces the old "Signature and
+                    name of authorised person" caption + line). */}
+                <div className="mb-2 max-w-[220px]">
+                  <Image
+                    src="/karin-signature.png"
+                    alt="Karin Brothers signature"
+                    width={220}
+                    height={70}
+                    className="object-contain"
+                  />
+                </div>
+                <div className="h-px bg-slate-300 max-w-xs"></div>
+                <p className="text-sm mt-2">
                   <strong>Karin Brothers</strong>, Director of Verification,
                   Land to Market
                 </p>
@@ -136,8 +129,8 @@ export function CertificateChrome({
               <Image
                 src="/l2m-seal-navy.svg"
                 alt="Land to Market verified seal"
-                width={110}
-                height={110}
+                width={150}
+                height={150}
                 className="shrink-0"
               />
             </div>

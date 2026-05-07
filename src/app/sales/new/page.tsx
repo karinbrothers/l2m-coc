@@ -205,6 +205,26 @@ export default async function NewSalePage({ searchParams }: PageProps) {
 
           <div>
             <label
+              htmlFor="shipping_number"
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              Shipping number
+            </label>
+            <input
+              id="shipping_number"
+              name="shipping_number"
+              type="text"
+              placeholder="Optional — waybill, tracking, or order number"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Appears on the buyer&apos;s transaction certificate (Box 6).
+              Leave blank if not yet assigned at the time of sale.
+            </p>
+          </div>
+
+          <div>
+            <label
               htmlFor="notes"
               className="mb-1 block text-sm font-medium text-slate-700"
             >
@@ -214,7 +234,7 @@ export default async function NewSalePage({ searchParams }: PageProps) {
               id="notes"
               name="notes"
               rows={3}
-              placeholder="Optional — contract reference, shipment details, etc."
+              placeholder="Optional — contract reference, additional context, etc."
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             />
           </div>
