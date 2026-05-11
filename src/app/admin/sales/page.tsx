@@ -152,9 +152,12 @@ function SaleCard({ s, showCancel }: { s: SaleRow; showCancel: boolean }) {
           <EditSaleButton
             saleId={s.id}
             current={{
+              volume: Number(s.volume),
+              sale_date: s.sale_date,
               shipping_number: s.shipping_number,
               country_of_dispatch: s.country_of_dispatch,
               notes: s.notes,
+              status: s.status,
             }}
           />
           {showCancel ? (
