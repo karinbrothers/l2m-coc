@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   notifySaleAccepted,
   notifySaleRejected,
+  notifyCertificateIssued,
 } from '@/lib/email/notifications'
 
 type SaleRow = {
@@ -47,21 +48,54 @@ export async function acceptSale(formData: FormData) {
 
   const sale = data as SaleRow | null
 
-  // Notify the seller org
   if (sale) {
-    const { data: buyerOrg } = await supabase
-      .from('organizations')
-      .select('name')
-      .eq('id', user.organization_id)
-      .maybeSingle()
+    // Fetch buyer org name, seller org name, and the freshly-issued
+    // TC in parallel so we can fire both notification emails.
+    const [{ data: buyerOrg }, { data: sellerOrg }, { data: tc }] =
+      await Promise.all([
+        supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', user.organization_id)
+          .maybeSingle(),
+        supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', sale.organization_id)
+          .maybeSingle(),
+        supabase
+          .from('certificates')
+          .select('id, certificate_number')
+          .eq('related_transaction_id', sale.id)
+          .eq('type', 'transaction')
+          .maybeSingle(),
+      ])
 
+    const buyerOrgName = buyerOrg?.name ?? 'a partner'
+    const sellerOrgName = sellerOrg?.name ?? 'a partner'
+
+    // Email the seller: "your sale was accepted".
     await notifySaleAccepted(supabase, {
       saleCode: sale.code,
-      buyerOrgName: buyerOrg?.name ?? 'a partner',
+      buyerOrgName,
       sellerOrgId: sale.organization_id,
       volume: sale.volume,
       notes: responseNotes,
     })
+
+    // Email the buyer: "your transaction certificate is ready".
+    // Useful for distribution — operations clicks accept, but
+    // compliance / marketing also want the cert link.
+    if (tc) {
+      await notifyCertificateIssued(supabase, {
+        certId: tc.id,
+        certNumber: tc.certificate_number,
+        saleCode: sale.code,
+        sellerOrgName,
+        buyerOrgId: user.organization_id,
+        volume: sale.volume,
+      })
+    }
   }
 
   revalidatePath('/inbox')

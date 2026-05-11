@@ -7,6 +7,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { notifySaleRejected } from '@/lib/email/notifications'
 
 export async function cancelPendingSaleAction(
   saleId: string,
@@ -33,6 +34,31 @@ export async function cancelPendingSaleAction(
       return { error: 'Sale not found.' }
     }
     return { error: error.message }
+  }
+
+  // Notify the seller that their pending sale was cancelled by
+  // an admin. Reuses the existing rejected-sale email template
+  // since cancel/reject look the same to the seller.
+  const { data: sale } = await supabase
+    .from('sales')
+    .select(
+      'code, volume, organization_id, buyer_org_id, buyer_name, response_notes, organizations:buyer_org_id(name)',
+    )
+    .eq('id', saleId)
+    .maybeSingle()
+
+  if (sale) {
+    const buyerName =
+      (sale.organizations as unknown as { name: string } | null)?.name ??
+      sale.buyer_name ??
+      'a buyer'
+    await notifySaleRejected(supabase, {
+      saleCode: sale.code,
+      buyerOrgName: buyerName,
+      sellerOrgId: sale.organization_id,
+      volume: Number(sale.volume),
+      notes: sale.response_notes,
+    })
   }
 
   revalidatePath('/admin/sales')
