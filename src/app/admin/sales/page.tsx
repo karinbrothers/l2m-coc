@@ -1,14 +1,17 @@
 // src/app/admin/sales/page.tsx
 //
-// Admin sales view. Two sections:
-//   1. Pending — every sale in the system awaiting buyer action,
-//      with a Cancel button.
-//   2. Recent decisions — last 25 accepted/rejected sales for
-//      audit context (read-only).
+// Admin sales view.
+//
+// Pending section — every sale awaiting buyer action, with
+//   Cancel and Edit-details buttons.
+// Recent decisions section — last 25 accepted/rejected sales,
+//   with Edit-details only (no cancel; for accepted sales,
+//   metadata edits flow through to the TC live).
 
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CancelSaleButton from './CancelSaleButton'
+import EditSaleButton from './EditSaleButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +25,9 @@ type SaleRow = {
   response_deadline: string | null
   buyer_name: string | null
   response_notes: string | null
+  shipping_number: string | null
+  country_of_dispatch: string | null
+  notes: string | null
   accepted_at: string | null
   rejected_at: string | null
   organizations: { name: string | null } | null
@@ -55,11 +61,116 @@ function statusBadge(s: SaleRow['status']) {
   )
 }
 
+function SaleCard({ s, showCancel }: { s: SaleRow; showCancel: boolean }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div>
+          <div className="flex items-baseline gap-3">
+            <div className="font-mono text-sm font-semibold text-slate-900">
+              {s.code}
+            </div>
+            {statusBadge(s.status)}
+          </div>
+          <div className="mt-1 text-sm text-slate-700">
+            <strong>{s.organizations?.name ?? '—'}</strong>
+            <span className="text-slate-400 mx-1">→</span>
+            <strong>{s.buyer_org?.name ?? s.buyer_name ?? '—'}</strong>
+          </div>
+        </div>
+        <div className="text-xs text-slate-500">
+          {s.status === 'pending'
+            ? `Respond by ${formatDate(s.response_deadline)}`
+            : `Decided ${formatDate(s.accepted_at ?? s.rejected_at)}`}
+        </div>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Volume</dt>
+          <dd className="text-slate-900 mt-0.5">
+            {Number(s.volume).toFixed(1)} {s.volume_unit ?? 't'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Sale date</dt>
+          <dd className="text-slate-900 mt-0.5">{formatDate(s.sale_date)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Lot</dt>
+          <dd className="font-mono text-xs text-slate-900 mt-0.5">
+            {s.inventory_lot?.code ?? '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Product</dt>
+          <dd className="text-slate-900 mt-0.5 capitalize">
+            {s.inventory_lot?.product_name ?? '—'}
+          </dd>
+        </div>
+      </dl>
+
+      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-3 border-t border-slate-100 pt-3">
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Shipping no.</dt>
+          <dd className="font-mono text-xs text-slate-900 mt-0.5">
+            {s.shipping_number ?? '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase text-slate-500">
+            Country of dispatch
+          </dt>
+          <dd className="text-slate-900 mt-0.5">
+            {s.country_of_dispatch ?? '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase text-slate-500">Notes</dt>
+          <dd className="text-slate-900 mt-0.5 truncate" title={s.notes ?? ''}>
+            {s.notes ?? '—'}
+          </dd>
+        </div>
+      </dl>
+
+      {s.response_notes ? (
+        <div className="mt-3 text-xs text-slate-600 border-t border-slate-100 pt-3">
+          <strong>Response notes:</strong> {s.response_notes}
+        </div>
+      ) : null}
+
+      <div className="mt-4 border-t border-slate-100 pt-3 flex flex-wrap items-start justify-between gap-3">
+        <Link
+          href={`/trace/${s.code}`}
+          target="_blank"
+          className="text-xs font-medium hover:underline"
+          style={{ color: '#063359' }}
+        >
+          View traceability →
+        </Link>
+        <div className="flex flex-wrap items-start gap-2">
+          <EditSaleButton
+            saleId={s.id}
+            current={{
+              shipping_number: s.shipping_number,
+              country_of_dispatch: s.country_of_dispatch,
+              notes: s.notes,
+            }}
+          />
+          {showCancel ? (
+            <CancelSaleButton saleId={s.id} saleCode={s.code} />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default async function AdminSalesPage() {
   const admin = createAdminClient()
 
   const SELECT =
-    'id, code, volume, volume_unit, sale_date, status, response_deadline, buyer_name, response_notes, accepted_at, rejected_at, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lot:inventory_lot_id(code, product_name)'
+    'id, code, volume, volume_unit, sale_date, status, response_deadline, buyer_name, response_notes, shipping_number, country_of_dispatch, notes, accepted_at, rejected_at, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lot:inventory_lot_id(code, product_name)'
 
   const [{ data: pendingRaw }, { data: historyRaw }] = await Promise.all([
     admin
@@ -84,9 +195,8 @@ export default async function AdminSalesPage() {
         <h1 className="text-2xl font-semibold text-slate-900">Admin · Sales</h1>
         <p className="mt-1 text-sm text-slate-600 max-w-2xl">
           Cancel pending sales when a partner picks the wrong buyer or
-          mistypes a volume. The sale&apos;s volume returns to the
-          seller&apos;s inventory and the sale is marked rejected with your
-          reason attached.
+          mistypes a volume. Edit shipping number, country of dispatch, or
+          notes on any sale (changes flow straight to the TC live).
         </p>
       </div>
 
@@ -94,7 +204,6 @@ export default async function AdminSalesPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700 mb-3">
           Pending decision ({pending.length})
         </h2>
-
         {pending.length === 0 ? (
           <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-500">
             No pending sales right now.
@@ -102,74 +211,7 @@ export default async function AdminSalesPage() {
         ) : (
           <div className="space-y-3">
             {pending.map((s) => (
-              <div
-                key={s.id}
-                className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <div>
-                    <div className="flex items-baseline gap-3">
-                      <div className="font-mono text-sm font-semibold text-slate-900">
-                        {s.code}
-                      </div>
-                      {statusBadge(s.status)}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-700">
-                      <strong>{s.organizations?.name ?? '—'}</strong>
-                      <span className="text-slate-400 mx-1">→</span>
-                      <strong>
-                        {s.buyer_org?.name ?? s.buyer_name ?? '—'}
-                      </strong>
-                    </div>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Respond by {formatDate(s.response_deadline)}
-                  </div>
-                </div>
-
-                <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">Volume</dt>
-                    <dd className="text-slate-900 mt-0.5">
-                      {Number(s.volume).toFixed(1)} {s.volume_unit ?? 't'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">
-                      Sale date
-                    </dt>
-                    <dd className="text-slate-900 mt-0.5">
-                      {formatDate(s.sale_date)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">Lot</dt>
-                    <dd className="font-mono text-xs text-slate-900 mt-0.5">
-                      {s.inventory_lot?.code ?? '—'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase text-slate-500">
-                      Product
-                    </dt>
-                    <dd className="text-slate-900 mt-0.5 capitalize">
-                      {s.inventory_lot?.product_name ?? '—'}
-                    </dd>
-                  </div>
-                </dl>
-
-                <div className="mt-4 border-t border-slate-100 pt-3 flex items-start justify-between gap-3">
-                  <Link
-                    href={`/trace/${s.code}`}
-                    target="_blank"
-                    className="text-xs font-medium hover:underline"
-                    style={{ color: '#063359' }}
-                  >
-                    View traceability →
-                  </Link>
-                  <CancelSaleButton saleId={s.id} saleCode={s.code} />
-                </div>
-              </div>
+              <SaleCard key={s.id} s={s} showCancel={true} />
             ))}
           </div>
         )}
@@ -184,43 +226,10 @@ export default async function AdminSalesPage() {
             No history yet.
           </div>
         ) : (
-          <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-2">Sale</th>
-                  <th className="px-4 py-2">Parties</th>
-                  <th className="px-4 py-2">Volume</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Decided</th>
-                  <th className="px-4 py-2">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {history.map((s) => {
-                  const decidedAt = s.accepted_at ?? s.rejected_at
-                  return (
-                    <tr key={s.id}>
-                      <td className="px-4 py-2 font-mono text-xs">{s.code}</td>
-                      <td className="px-4 py-2 text-slate-700">
-                        {s.organizations?.name ?? '—'} →{' '}
-                        {s.buyer_org?.name ?? s.buyer_name ?? '—'}
-                      </td>
-                      <td className="px-4 py-2">
-                        {Number(s.volume).toFixed(1)} {s.volume_unit ?? 't'}
-                      </td>
-                      <td className="px-4 py-2">{statusBadge(s.status)}</td>
-                      <td className="px-4 py-2 text-slate-500">
-                        {formatDate(decidedAt)}
-                      </td>
-                      <td className="px-4 py-2 text-slate-600 text-xs max-w-xs truncate">
-                        {s.response_notes ?? '—'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {history.map((s) => (
+              <SaleCard key={s.id} s={s} showCancel={false} />
+            ))}
           </div>
         )}
       </section>
