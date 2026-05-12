@@ -57,8 +57,22 @@ export async function createPurchase(formData: FormData) {
   if (lbErr || !lb) {
     redirect('/purchases/new?error=landbase_not_found')
   }
-  if (lb.eligibility_status !== 'eligible') {
-    redirect('/purchases/new?error=landbase_not_eligible')
+
+  // Eligibility is judged against the purchase date, not the
+  // current status — a partner can record a purchase made on a
+  // date when the landbase WAS eligible, even if it's lapsed
+  // since. Requires verification_date and expiration_date to be
+  // set (otherwise we have no window to verify against).
+  if (!lb.verification_date || !lb.expiration_date) {
+    redirect('/purchases/new?error=landbase_missing_verification')
+  }
+
+  const effectiveDate = purchaseDate ?? new Date().toISOString().slice(0, 10)
+  if (
+    effectiveDate < lb.verification_date ||
+    effectiveDate > lb.expiration_date
+  ) {
+    redirect('/purchases/new?error=landbase_not_eligible_on_date')
   }
 
   const code = await generateNextPurchaseCode(supabase)
