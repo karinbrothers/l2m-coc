@@ -61,16 +61,38 @@ function statusBadge(s: SaleRow['status']) {
   )
 }
 
-function SaleCard({ s, showCancel }: { s: SaleRow; showCancel: boolean }) {
+function SaleCard({
+  s,
+  showCancel,
+  now,
+}: {
+  s: SaleRow
+  showCancel: boolean
+  now: number
+}) {
+  // "Past due" = pending sale whose 14-day response deadline has
+  // passed. We don't auto-expire — partner follow-up is handled
+  // manually — but the badge surfaces who needs nudging.
+  // `now` is passed from the parent so the render stays pure.
+  const isPastDue =
+    s.status === 'pending' &&
+    s.response_deadline != null &&
+    new Date(s.response_deadline).getTime() < now
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
-          <div className="flex items-baseline gap-3">
+          <div className="flex items-baseline gap-3 flex-wrap">
             <div className="font-mono text-sm font-semibold text-slate-900">
               {s.code}
             </div>
             {statusBadge(s.status)}
+            {isPastDue ? (
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">
+                Past due
+              </span>
+            ) : null}
           </div>
           <div className="mt-1 text-sm text-slate-700">
             <strong>{s.organizations?.name ?? '—'}</strong>
@@ -191,6 +213,10 @@ export default async function AdminSalesPage() {
 
   const pending = (pendingRaw ?? []) as unknown as SaleRow[]
   const history = (historyRaw ?? []) as unknown as SaleRow[]
+  // Server component runs once per request; Date.now() is fine
+  // here. Lint rule is tuned for client renders.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now()
 
   return (
     <div className="space-y-8 max-w-5xl">
@@ -214,7 +240,7 @@ export default async function AdminSalesPage() {
         ) : (
           <div className="space-y-3">
             {pending.map((s) => (
-              <SaleCard key={s.id} s={s} showCancel={true} />
+              <SaleCard key={s.id} s={s} showCancel={true} now={now} />
             ))}
           </div>
         )}
@@ -231,7 +257,7 @@ export default async function AdminSalesPage() {
         ) : (
           <div className="space-y-3">
             {history.map((s) => (
-              <SaleCard key={s.id} s={s} showCancel={false} />
+              <SaleCard key={s.id} s={s} showCancel={false} now={now} />
             ))}
           </div>
         )}

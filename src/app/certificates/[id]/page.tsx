@@ -1,27 +1,44 @@
 // src/app/certificates/[id]/page.tsx
 //
 // Loads a certificate plus the joined data each cert type needs.
-// For TCs we additionally call get_tc_immediate_inputs to render
-// "Input Information" as the immediate upstream cert(s) — not
-// the landbase OCs at the bottom of the chain.
+// Renders a VOIDED banner if the cert has been marked invalid.
+// Shows a void/un-void admin button to admins above the chrome.
 
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
-import { OriginCertificate } from '@/components/certificates/OriginCertificate';
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import { OriginCertificate } from '@/components/certificates/OriginCertificate'
 import {
   TransactionCertificate,
   type ImmediateInput,
-} from '@/components/certificates/TransactionCertificate';
+} from '@/components/certificates/TransactionCertificate'
+import VoidedBanner from '@/components/certificates/VoidedBanner'
+import VoidCertButton from './VoidCertButton'
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
 
 export default async function CertificateDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }>
 }) {
-  const { id } = await params;
-  const supabase = await createClient();
+  const { id } = await params
+  const supabase = await createClient()
+
+  // Determine if the current user is an admin (gates the void
+  // button). Cert visibility itself goes through the existing
+  // user_can_see_cert RLS.
+  let isAdmin = false
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    isAdmin = profile?.role === 'admin'
+  }
 
   const { data: cert, error } = await supabase
     .from('certificates')
@@ -59,24 +76,23 @@ export default async function CertificateDetailPage({
       `,
     )
     .eq('id', id)
-    .maybeSingle();
+    .maybeSingle()
 
-  // For TCs, also fetch the IMMEDIATE upstream inputs (the cert
-  // before this one in the chain). For an FSP's TC, those are
-  // landbase OCs; for any later-stage TC, they're the upstream
-  // partner's TCs.
-  let immediateInputs: ImmediateInput[] = [];
+  let immediateInputs: ImmediateInput[] = []
   if (cert && cert.type === 'transaction') {
     const { data, error: rpcErr } = await supabase.rpc(
       'get_tc_immediate_inputs',
       { p_tc_id: id },
-    );
+    )
     if (rpcErr) {
-      console.error('[cert page] get_tc_immediate_inputs error:', rpcErr);
+      console.error('[cert page] get_tc_immediate_inputs error:', rpcErr)
     } else if (Array.isArray(data)) {
-      immediateInputs = data as ImmediateInput[];
+      immediateInputs = data as ImmediateInput[]
     }
   }
+
+  const voidedAt: string | null = cert?.voided_at ?? null
+  const voidReason: string | null = cert?.void_reason ?? null
 
   return (
     <div className="p-6">
@@ -100,20 +116,28 @@ export default async function CertificateDetailPage({
         <p className="text-sm text-gray-500">Certificate not found.</p>
       )}
 
-      {cert && cert.type === 'origin' && (
-        <OriginCertificate certificate={cert} />
-      )}
-      {cert && cert.type === 'transaction' && (
-        <TransactionCertificate
-          certificate={cert}
-          immediateInputs={immediateInputs}
-        />
-      )}
-      {cert && cert.type !== 'origin' && cert.type !== 'transaction' && (
-        <p className="text-sm text-gray-500">
-          Detail view for type &quot;{cert.type}&quot; not yet implemented.
-        </p>
-      )}
+      {cert ? (
+        <>
+          {isAdmin ? (
+            <VoidCertButton certId={cert.id} alreadyVoided={!!voidedAt} />
+          ) : null}
+
+          <VoidedBanner voidedAt={voidedAt} reason={voidReason} />
+
+          {cert.type === 'origin' && <OriginCertificate certificate={cert} />}
+          {cert.type === 'transaction' && (
+            <TransactionCertificate
+              certificate={cert}
+              immediateInputs={immediateInputs}
+            />
+          )}
+          {cert.type !== 'origin' && cert.type !== 'transaction' && (
+            <p className="text-sm text-gray-500">
+              Detail view for type &quot;{cert.type}&quot; not yet implemented.
+            </p>
+          )}
+        </>
+      ) : null}
     </div>
-  );
+  )
 }
