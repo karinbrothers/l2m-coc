@@ -1,31 +1,33 @@
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 type CertRow = {
-  id: string;
-  certificate_number: string | null;
-  type: string;
-  issued_at: string | null;
-  related_purchase_id: string | null;
-  related_transaction_id: string | null;
+  id: string
+  certificate_number: string | null
+  type: string
+  issued_at: string | null
+  related_purchase_id: string | null
+  related_transaction_id: string | null
+  voided_at: string | null
   purchase: {
-    code: string | null;
-    organization: { name: string | null } | null;
-  } | null;
-  transaction: {
-    order_number: string | null;
-    seller: { name: string | null } | null;
-    buyer: { name: string | null } | null;
-  } | null;
-};
+    code: string | null
+    organization: { name: string | null } | null
+  } | null
+  sale: {
+    code: string | null
+    buyer_name: string | null
+    seller: { name: string | null } | null
+    buyer_org: { name: string | null } | null
+  } | null
+}
 
 export default async function CertificatesPage() {
-  const supabase = await createClient();
+  const supabase = await createClient()
 
   const { data, error } = await supabase
-    .from("certificates")
+    .from('certificates')
     .select(
       `
         id,
@@ -34,20 +36,22 @@ export default async function CertificatesPage() {
         issued_at,
         related_purchase_id,
         related_transaction_id,
+        voided_at,
         purchase:raw_material_purchases (
           code,
           organization:organizations ( name )
         ),
-        transaction:sale_transactions (
-          order_number,
-          seller:organizations!seller_org_id ( name ),
-          buyer:organizations!buyer_org_id ( name )
+        sale:sales!related_transaction_id (
+          code,
+          buyer_name,
+          seller:organization_id ( name ),
+          buyer_org:buyer_org_id ( name )
         )
-      `
+      `,
     )
-    .order("issued_at", { ascending: false });
+    .order('issued_at', { ascending: false })
 
-  const certs = (data ?? []) as unknown as CertRow[];
+  const certs = (data ?? []) as unknown as CertRow[]
 
   return (
     <div className="p-6">
@@ -63,8 +67,9 @@ export default async function CertificatesPage() {
 
       {certs.length === 0 ? (
         <div className="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-          No certificates yet. Origin certificates are issued when unprocessed material is purchased.
-          Transaction certificates are issued when a sale is accepted.
+          No certificates yet. Origin certificates are issued when unprocessed
+          material is purchased. Transaction certificates are issued when a
+          sale is accepted.
         </div>
       ) : (
         <div className="overflow-hidden rounded border border-gray-200">
@@ -81,22 +86,33 @@ export default async function CertificatesPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {certs.map((c) => {
-                const isOrigin = c.type === "origin";
+                const isOrigin = c.type === 'origin'
                 const reference = isOrigin
-                  ? c.purchase?.code ?? "—"
-                  : c.transaction?.order_number ?? "—";
+                  ? c.purchase?.code ?? '—'
+                  : c.sale?.code ?? '—'
                 const counterparty = isOrigin
-                  ? c.purchase?.organization?.name ?? "—"
-                  : `${c.transaction?.seller?.name ?? "?"} → ${c.transaction?.buyer?.name ?? "?"}`;
+                  ? c.purchase?.organization?.name ?? '—'
+                  : `${c.sale?.seller?.name ?? '?'} → ${
+                      c.sale?.buyer_org?.name ?? c.sale?.buyer_name ?? '?'
+                    }`
 
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2 font-mono text-xs">
-                      {c.certificate_number ?? c.id.slice(0, 8)}
+                      <span className="inline-flex items-center gap-2">
+                        {c.certificate_number ?? c.id.slice(0, 8)}
+                        {c.voided_at ? (
+                          <span className="inline-flex items-center rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
+                            Voided
+                          </span>
+                        ) : null}
+                      </span>
                     </td>
                     <td className="px-4 py-2 capitalize">{c.type}</td>
                     <td className="px-4 py-2 text-gray-600">
-                      {c.issued_at ? new Date(c.issued_at).toLocaleDateString() : "—"}
+                      {c.issued_at
+                        ? new Date(c.issued_at).toLocaleDateString()
+                        : '—'}
                     </td>
                     <td className="px-4 py-2 text-gray-600">{reference}</td>
                     <td className="px-4 py-2 text-gray-600">{counterparty}</td>
@@ -109,12 +125,12 @@ export default async function CertificatesPage() {
                       </Link>
                     </td>
                   </tr>
-                );
+                )
               })}
             </tbody>
           </table>
         </div>
       )}
     </div>
-  );
+  )
 }
