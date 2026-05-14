@@ -76,9 +76,7 @@ export default async function RootLayout({
                 <Link href="/landbases" className={linkClass}>Landbases</Link>
                 <Link href="/purchases" className={linkClass}>Purchases</Link>
                 <Link href="/inventory" className={linkClass}>Inventory</Link>
-                {isFinalBrand ? null : (
-                  <Link href="/processing" className={linkClass}>Processing</Link>
-                )}
+                <Link href="/processing" className={linkClass}>Processing</Link>
                 {isFinalBrand ? null : (
                   <Link href="/sales" className={linkClass}>Sales</Link>
                 )}
@@ -95,8 +93,6 @@ export default async function RootLayout({
                     </div>
                     <Link href="/admin/partners" className={linkClass}>Partners</Link>
                     <Link href="/admin/activity" className={linkClass}>Supply chain activity</Link>
-                    <Link href="/admin/purchases" className={linkClass}>Purchases</Link>
-                    <Link href="/admin/sales" className={linkClass}>Sales</Link>
                     <Link href="/admin/invitations" className={linkClass}>Invitations</Link>
                     <Link href="/admin/salesforce/connect" className={linkClass}>Salesforce sync</Link>
                   </>

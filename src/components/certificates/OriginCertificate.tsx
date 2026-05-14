@@ -35,6 +35,7 @@ type OriginCertificateData = {
   report_year_used: number | null;
   fibre_diameter_snapshot?: number | null;
   eligibility_report_id_snapshot?: string | null;
+  buyer_org_name_snapshot?: string | null;
 };
 
 function formatDate(d: string | null) {
@@ -99,7 +100,9 @@ export function OriginCertificate({
           span={6}
           minHeight="120px"
         >
-          <p className="font-medium">{buyerOrg?.name ?? '—'}</p>
+          <p className="font-medium">
+            {certificate.buyer_org_name_snapshot ?? buyerOrg?.name ?? '—'}
+          </p>
           {buyerOrg?.address ? (
             <p className="text-slate-700 whitespace-pre-line text-xs print:text-[9px] mt-1">
               {buyerOrg.address}

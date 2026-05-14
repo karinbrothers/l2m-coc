@@ -122,6 +122,15 @@ export async function createPurchase(formData: FormData) {
   const certificateNumber =
     (certNumberData as string | null) ?? `OC-${newPurchase.code}`
 
+  // Fetch the buyer-org name so we can snapshot it onto the OC.
+  // Used by OC Box 2 ("First Stage Processor / Buyer of Raw
+  // Material") at display time, RLS-independent.
+  const { data: buyerOrg } = await supabase
+    .from('organizations')
+    .select('name')
+    .eq('id', user.organization_id)
+    .maybeSingle()
+
   // Auto-generate the origin certificate for this purchase, with a full
   // snapshot of the landbase + purchase fields so the cert remains a faithful
   // record even if the underlying rows change later.
@@ -144,6 +153,7 @@ export async function createPurchase(formData: FormData) {
     purchase_date: purchaseDate,
     clip_year_snapshot: yearOfClip,
     report_year_used: new Date().getFullYear(),
+    buyer_org_name_snapshot: buyerOrg?.name ?? null,
   })
 
   if (certErr) {

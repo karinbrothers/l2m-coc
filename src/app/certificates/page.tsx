@@ -8,24 +8,22 @@ type CertRow = {
   certificate_number: string | null
   type: string
   issued_at: string | null
-  related_purchase_id: string | null
-  related_transaction_id: string | null
   voided_at: string | null
-  purchase: {
-    code: string | null
-    organization: { name: string | null } | null
-  } | null
-  sale: {
-    code: string | null
-    buyer_name: string | null
-    seller: { name: string | null } | null
-    buyer_org: { name: string | null } | null
-  } | null
+  purchase_code: string | null
+  sale_code: string | null
+  landbase_name_snapshot: string | null
+  seller_org_name_snapshot: string | null
+  buyer_name_snapshot: string | null
+  buyer_org_name_snapshot: string | null
 }
 
 export default async function CertificatesPage() {
   const supabase = await createClient()
 
+  // Use snapshot fields stored on the cert itself — no joins to
+  // organizations or sales, so chain participants who can SEE
+  // the cert (per user_can_see_cert RLS) also get the org names
+  // alongside, without depending on organizations RLS.
   const { data, error } = await supabase
     .from('certificates')
     .select(
@@ -34,19 +32,13 @@ export default async function CertificatesPage() {
         certificate_number,
         type,
         issued_at,
-        related_purchase_id,
-        related_transaction_id,
         voided_at,
-        purchase:raw_material_purchases (
-          code,
-          organization:organizations ( name )
-        ),
-        sale:sales!related_transaction_id (
-          code,
-          buyer_name,
-          seller:organization_id ( name ),
-          buyer_org:buyer_org_id ( name )
-        )
+        purchase_code,
+        sale_code,
+        landbase_name_snapshot,
+        seller_org_name_snapshot,
+        buyer_name_snapshot,
+        buyer_org_name_snapshot
       `,
     )
     .order('issued_at', { ascending: false })
@@ -88,12 +80,14 @@ export default async function CertificatesPage() {
               {certs.map((c) => {
                 const isOrigin = c.type === 'origin'
                 const reference = isOrigin
-                  ? c.purchase?.code ?? '—'
-                  : c.sale?.code ?? '—'
+                  ? c.purchase_code ?? '—'
+                  : c.sale_code ?? '—'
                 const counterparty = isOrigin
-                  ? c.purchase?.organization?.name ?? '—'
-                  : `${c.sale?.seller?.name ?? '?'} → ${
-                      c.sale?.buyer_org?.name ?? c.sale?.buyer_name ?? '?'
+                  ? c.buyer_org_name_snapshot ??
+                    c.landbase_name_snapshot ??
+                    '—'
+                  : `${c.seller_org_name_snapshot ?? '?'} → ${
+                      c.buyer_name_snapshot ?? '?'
                     }`
 
                 return (
