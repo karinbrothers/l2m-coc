@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 
@@ -103,13 +104,14 @@ export default async function InventoryPage() {
                 <th className="px-6 py-3">Landbase</th>
                 <th className="px-6 py-3">Purchased</th>
                 <th className="px-6 py-3">Remaining</th>
+                <th className="px-6 py-3 text-right"></th>
               </tr>
             </thead>
             <tbody>
               {raws.map((r) => (
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-6 py-3 font-mono text-xs">{r.code}</td>
-                  <td className="px-6 py-3">{r.commodity_type}</td>
+                  <td className="px-6 py-3 capitalize">{r.commodity_type}</td>
                   <td className="px-6 py-3">
                     {r.source_sale_id
                       ? `Received from ${r.source_sale?.seller_org?.name ?? 'unknown'}`
@@ -118,6 +120,14 @@ export default async function InventoryPage() {
                   <td className="px-6 py-3 text-slate-600">{r.purchase_date}</td>
                   <td className="px-6 py-3">
                     {Number(r.volume_remaining)} {r.volume_unit}
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <Link
+                      href="/processing/new"
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      Process →
+                    </Link>
                   </td>
                 </tr>
               ))}
