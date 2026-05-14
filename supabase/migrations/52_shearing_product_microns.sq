@@ -1,0 +1,76 @@
+-- Migration 52: shearing date, product name, output microns
+-- ============================================================
+-- Three schema additions plus a small RPC:
+--
+-- 1. raw_material_purchases.shearing_date — the date the wool
+--    was sheared. Replaces purchase_date's role in eligibility
+--    checking. A purchase is allowed if the landbase was
+--    eligible on the SHEARING date, regardless of when the
+--    purchase was recorded or even when the buyer paid for it.
+--    Purchase_date stays as a record-keeping field.
+--
+-- 2. raw_material_purchases.product_name — what was bought
+--    (Greasy Wool / Clean Wool / Wool Tops). FSPs that buy
+--    already-processed material from another supply chain
+--    (e.g., at auction) can record exactly what stage.
+--
+-- 3. inventory_lots.output_micron_diameter — when the processor
+--    blends material from multiple farms, the output has its
+--    own micron measurement independent of the inputs.
+--
+-- 4. set_lot_micron() RPC — security-definer setter so the JS
+--    action can attach microns to a freshly-created lot after
+--    record_processing_batch runs (same pattern as
+--    set_sale_shipping_number).
+
+alter table public.raw_material_purchases
+  add column if not exists shearing_date date,
+  add column if not exists product_name  text;
+
+alter table public.inventory_lots
+  add column if not exists output_micron_diameter numeric;
+
+-- Backfill shearing_date for existing rows from purchase_date so
+-- existing data still validates against the new eligibility
+-- check. This is a best-guess assumption — most operations
+-- record the purchase shortly after shearing.
+update public.raw_material_purchases
+   set shearing_date = purchase_date
+ where shearing_date is null
+   and purchase_date is not null;
+
+-- Setter RPC for inventory_lots.output_micron_diameter
+create or replace function public.set_lot_micron(
+  p_lot_id uuid,
+  p_micron numeric
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_my_org  uuid := get_my_org_id();
+  v_lot_org uuid;
+begin
+  if v_my_org is null and not is_admin() then
+    raise exception 'no_organization';
+  end if;
+
+  select organization_id into v_lot_org
+    from inventory_lots where id = p_lot_id;
+  if v_lot_org is null then
+    raise exception 'lot_not_found';
+  end if;
+  if v_lot_org <> v_my_org and not is_admin() then
+    raise exception 'not_authorized';
+  end if;
+
+  update inventory_lots
+     set output_micron_diameter = p_micron
+   where id = p_lot_id;
+end;
+$$;
+
+revoke all on function public.set_lot_micron(uuid, numeric) from public;
+grant  execute on function public.set_lot_micron(uuid, numeric) to authenticated;

@@ -1,15 +1,16 @@
 // src/app/purchases/new/PurchaseForm.tsx
 //
-// Client-side form for recording a new purchase. The user picks
-// the purchase date first; the landbase dropdown then shows only
-// landbases that were eligible on that date (verification_date ≤
-// purchase_date ≤ expiration_date). This handles the realistic
-// case where a partner buys wool today but logs the purchase a
-// few days later, after the landbase's eligibility window has
-// technically lapsed.
+// Client-side form for recording a new purchase.
 //
-// Server-side validation in createPurchase enforces the same
-// rule — UI filter is a usability layer, not a security layer.
+// Key decisions:
+// - SHEARING DATE drives landbase eligibility (not purchase date).
+//   A landbase only appears in the dropdown if it was eligible on
+//   the date the wool was sheared. Late-recorded purchases work.
+// - PRODUCT NAME is a dropdown — greasy wool, clean wool, or wool
+//   tops — so an FSP that buys already-processed material (e.g.,
+//   at auction) can record the actual stage.
+// - WILL YOU PROCESS? if no, the action creates a passthrough
+//   inventory lot so the material is ready-to-sell immediately.
 
 'use client'
 
@@ -25,6 +26,12 @@ type Landbase = {
   expiration_date: string | null
   eligibility_status: string | null
 }
+
+const PRODUCT_OPTIONS = [
+  { value: 'Greasy Wool', label: 'Greasy Wool' },
+  { value: 'Clean Wool', label: 'Clean Wool' },
+  { value: 'Wool Tops', label: 'Wool Tops' },
+]
 
 function formatDateShort(iso: string | null): string {
   if (!iso) return '—'
@@ -43,28 +50,25 @@ export default function PurchaseForm({
   const todayIso = new Date().toISOString().slice(0, 10)
   const currentYear = new Date().getFullYear()
 
+  const [shearingDate, setShearingDate] = useState(todayIso)
   const [purchaseDate, setPurchaseDate] = useState(todayIso)
   const [landbaseId, setLandbaseId] = useState('')
+  const [willProcess, setWillProcess] = useState('yes')
 
-  // Filter to landbases whose verification window covers the
-  // selected purchase date. NULL dates → not eligible (can't
-  // verify a window we don't have).
+  // Filter landbases by their verification window relative to the
+  // SHEARING date. The wool was eligible if the landbase was
+  // eligible when the sheep were shorn.
   const eligibleOnDate = useMemo(() => {
-    if (!purchaseDate) return []
+    if (!shearingDate) return []
     return landbases.filter(
       (lb) =>
         lb.verification_date &&
         lb.expiration_date &&
-        lb.verification_date <= purchaseDate &&
-        purchaseDate <= lb.expiration_date,
+        lb.verification_date <= shearingDate &&
+        shearingDate <= lb.expiration_date,
     )
-  }, [purchaseDate, landbases])
+  }, [shearingDate, landbases])
 
-  // Whether the user's current selection is still valid for the
-  // chosen date. Computed during render rather than reset in an
-  // effect — this way, if the user toggles back to a date where
-  // their original landbase is eligible again, the selection
-  // comes back automatically without needing to re-pick.
   const selectedStillEligible = landbaseId
     ? eligibleOnDate.some((lb) => lb.id === landbaseId)
     : false
@@ -75,27 +79,47 @@ export default function PurchaseForm({
       action={createPurchase}
       className="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
     >
-      <div>
-        <label
-          htmlFor="purchase_date"
-          className="mb-1 block text-sm font-medium text-slate-700"
-        >
-          Purchase date <span className="text-red-600">*</span>
-        </label>
-        <input
-          id="purchase_date"
-          name="purchase_date"
-          type="date"
-          required
-          value={purchaseDate}
-          onChange={(e) => setPurchaseDate(e.target.value)}
-          className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          Landbase eligibility is checked against this date — you can record a
-          purchase from a date when a landbase was eligible, even if eligibility
-          has since lapsed.
-        </p>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label
+            htmlFor="shearing_date"
+            className="mb-1 block text-sm font-medium text-slate-700"
+          >
+            Date of shearing <span className="text-red-600">*</span>
+          </label>
+          <input
+            id="shearing_date"
+            name="shearing_date"
+            type="date"
+            required
+            value={shearingDate}
+            onChange={(e) => setShearingDate(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Drives landbase eligibility. Wool sheared while the landbase was
+            eligible can still be recorded later.
+          </p>
+        </div>
+        <div>
+          <label
+            htmlFor="purchase_date"
+            className="mb-1 block text-sm font-medium text-slate-700"
+          >
+            Purchase date
+          </label>
+          <input
+            id="purchase_date"
+            name="purchase_date"
+            type="date"
+            value={purchaseDate}
+            onChange={(e) => setPurchaseDate(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            When the wool was bought. For your records.
+          </p>
+        </div>
       </div>
 
       <div>
@@ -115,7 +139,7 @@ export default function PurchaseForm({
         >
           <option value="" disabled>
             {eligibleOnDate.length === 0
-              ? 'No landbases were eligible on this date'
+              ? 'No landbases were eligible on this shearing date'
               : 'Select an eligible landbase…'}
           </option>
           {eligibleOnDate.map((lb) => (
@@ -128,12 +152,33 @@ export default function PurchaseForm({
         <p className="mt-1 text-xs text-slate-500">
           {eligibleOnDate.length} landbase
           {eligibleOnDate.length === 1 ? '' : 's'} eligible on{' '}
-          {formatDateShort(purchaseDate)}.
+          {formatDateShort(shearingDate)}.
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="col-span-2">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label
+            htmlFor="product_name"
+            className="mb-1 block text-sm font-medium text-slate-700"
+          >
+            Product name <span className="text-red-600">*</span>
+          </label>
+          <select
+            id="product_name"
+            name="product_name"
+            required
+            defaultValue="Greasy Wool"
+            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+          >
+            {PRODUCT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label
             htmlFor="volume"
             className="mb-1 block text-sm font-medium text-slate-700"
@@ -149,16 +194,6 @@ export default function PurchaseForm({
             step="0.01"
             placeholder="e.g. 12.5"
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">
-            Commodity
-          </label>
-          <input
-            value="Wool"
-            disabled
-            className="w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500 shadow-sm"
           />
         </div>
       </div>
@@ -216,6 +251,44 @@ export default function PurchaseForm({
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
         />
       </div>
+
+      <fieldset className="rounded-md border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-2 text-sm font-medium text-slate-700">
+          Will you process this material before selling it?
+        </legend>
+        <div className="mt-2 space-y-2">
+          <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="radio"
+              name="will_process"
+              value="yes"
+              checked={willProcess === 'yes'}
+              onChange={(e) => setWillProcess(e.target.value)}
+              className="mt-0.5"
+            />
+            <span>
+              <strong>Yes</strong> — I&rsquo;ll record a processing batch
+              before selling. Volume stays in the unprocessed pool until
+              then.
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="radio"
+              name="will_process"
+              value="no"
+              checked={willProcess === 'no'}
+              onChange={(e) => setWillProcess(e.target.value)}
+              className="mt-0.5"
+            />
+            <span>
+              <strong>No</strong> — I&rsquo;ll sell this material as-is. The
+              system will create a ready-to-sell inventory lot for it
+              automatically.
+            </span>
+          </label>
+        </div>
+      </fieldset>
 
       <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
         <Link

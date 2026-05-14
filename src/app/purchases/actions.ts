@@ -5,10 +5,13 @@ import { revalidatePath } from 'next/cache'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 
+// ---------------------------------------------------------------
+// Code generators
+// ---------------------------------------------------------------
+
 async function generateNextPurchaseCode(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<string> {
-  // Atomic via Postgres sequence — see migration 43.
   const { data, error } = await supabase.rpc('next_purchase_code')
   if (error || !data) {
     console.error('[next_purchase_code]', error?.message)
@@ -16,6 +19,34 @@ async function generateNextPurchaseCode(
   }
   return data as string
 }
+
+// Inline lot code generator for the no-processing passthrough
+// flow. Uses LOT-YYYY-NNNN format and MAX+1 lookup.
+async function generatePassthroughLotCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<string> {
+  const year = new Date().getFullYear()
+  const prefix = `LOT-${year}-`
+
+  const { data } = await supabase
+    .from('inventory_lots')
+    .select('code')
+    .like('code', `${prefix}%`)
+    .order('code', { ascending: false })
+    .limit(1)
+
+  let nextNum = 1
+  if (data && data.length > 0) {
+    const tail = (data[0].code as string).slice(prefix.length)
+    const parsed = parseInt(tail, 10)
+    if (!Number.isNaN(parsed)) nextNum = parsed + 1
+  }
+  return `${prefix}${String(nextNum).padStart(4, '0')}`
+}
+
+// ---------------------------------------------------------------
+// createPurchase
+// ---------------------------------------------------------------
 
 export async function createPurchase(formData: FormData) {
   const user = await requireUser()
@@ -26,26 +57,45 @@ export async function createPurchase(formData: FormData) {
   const fibreRaw = String(formData.get('fibre_diameter') ?? '').trim()
   const yearRaw = String(formData.get('year_of_clip') ?? '').trim()
   const batchNumber = String(formData.get('batch_number') ?? '').trim() || null
-  const purchaseDate = String(formData.get('purchase_date') ?? '').trim() || null
+  const purchaseDate =
+    String(formData.get('purchase_date') ?? '').trim() || null
+  const shearingDate =
+    String(formData.get('shearing_date') ?? '').trim() || null
+  const productName = String(formData.get('product_name') ?? '').trim() || null
+  const willProcess =
+    String(formData.get('will_process') ?? 'yes').trim().toLowerCase() ===
+    'yes'
 
   if (!landbaseId) {
     redirect('/purchases/new?error=missing_landbase')
   }
+  if (!shearingDate) {
+    redirect('/purchases/new?error=missing_shearing_date')
+  }
+  if (!productName) {
+    redirect('/purchases/new?error=missing_product_name')
+  }
+
   const volume = Number(volumeRaw)
   if (!volumeRaw || !Number.isFinite(volume) || volume <= 0) {
     redirect('/purchases/new?error=invalid_volume')
   }
   const fibreDiameter = fibreRaw ? Number(fibreRaw) : null
-  if (fibreRaw && (!Number.isFinite(fibreDiameter as number) || (fibreDiameter as number) <= 0)) {
+  if (
+    fibreRaw &&
+    (!Number.isFinite(fibreDiameter as number) ||
+      (fibreDiameter as number) <= 0)
+  ) {
     redirect('/purchases/new?error=invalid_fibre')
   }
   const yearOfClip = yearRaw ? parseInt(yearRaw, 10) : null
-  if (yearRaw && (!Number.isFinite(yearOfClip as number) || (yearOfClip as number) < 1900)) {
+  if (
+    yearRaw &&
+    (!Number.isFinite(yearOfClip as number) || (yearOfClip as number) < 1900)
+  ) {
     redirect('/purchases/new?error=invalid_year')
   }
 
-  // Pull every landbase field that ends up snapshotted onto the cert,
-  // so we only hit the DB once for both validation and snapshot capture.
   const { data: lb, error: lbErr } = await supabase
     .from('landbases')
     .select(
@@ -58,19 +108,15 @@ export async function createPurchase(formData: FormData) {
     redirect('/purchases/new?error=landbase_not_found')
   }
 
-  // Eligibility is judged against the purchase date, not the
-  // current status — a partner can record a purchase made on a
-  // date when the landbase WAS eligible, even if it's lapsed
-  // since. Requires verification_date and expiration_date to be
-  // set (otherwise we have no window to verify against).
+  // Eligibility window is judged against the SHEARING date, not
+  // the purchase date. A landbase is valid for this purchase if
+  // it was eligible when the wool was sheared.
   if (!lb.verification_date || !lb.expiration_date) {
     redirect('/purchases/new?error=landbase_missing_verification')
   }
-
-  const effectiveDate = purchaseDate ?? new Date().toISOString().slice(0, 10)
   if (
-    effectiveDate < lb.verification_date ||
-    effectiveDate > lb.expiration_date
+    shearingDate < lb.verification_date ||
+    shearingDate > lb.expiration_date
   ) {
     redirect('/purchases/new?error=landbase_not_eligible_on_date')
   }
@@ -87,6 +133,8 @@ export async function createPurchase(formData: FormData) {
       volume_remaining: volume,
       volume_unit: 'tonnes',
       commodity_type: 'wool',
+      product_name: productName,
+      shearing_date: shearingDate,
       fibre_diameter: fibreDiameter,
       year_of_clip: yearOfClip,
       batch_number: batchNumber,
@@ -102,38 +150,28 @@ export async function createPurchase(formData: FormData) {
     )
   }
 
-  // Mint an origin-certificate number via the SQL function so OC numbers
-  // follow the L2M-OC-YYYY-NNNN format consistently with TCs (which are
-  // numbered by the issue_tc_for_sale function in the database).
+  // Mint OC number atomically via SQL function
   const { data: certNumberData, error: certNumberErr } = await supabase.rpc(
     'generate_certificate_number',
     { cert_type: 'origin' },
   )
-
   if (certNumberErr || !certNumberData) {
     console.error(
       '[createPurchase] generate_certificate_number failed:',
       certNumberErr?.message,
     )
-    // Fall back to the legacy format so we still issue *something*
-    // rather than silently dropping the cert.
   }
-
   const certificateNumber =
     (certNumberData as string | null) ?? `OC-${newPurchase.code}`
 
-  // Fetch the buyer-org name so we can snapshot it onto the OC.
-  // Used by OC Box 2 ("First Stage Processor / Buyer of Raw
-  // Material") at display time, RLS-independent.
+  // Buyer-org name for the OC's Box 2 snapshot
   const { data: buyerOrg } = await supabase
     .from('organizations')
     .select('name')
     .eq('id', user.organization_id)
     .maybeSingle()
 
-  // Auto-generate the origin certificate for this purchase, with a full
-  // snapshot of the landbase + purchase fields so the cert remains a faithful
-  // record even if the underlying rows change later.
+  // Issue OC
   const { error: certErr } = await supabase.from('certificates').insert({
     certificate_number: certificateNumber,
     type: 'origin',
@@ -155,14 +193,49 @@ export async function createPurchase(formData: FormData) {
     report_year_used: new Date().getFullYear(),
     buyer_org_name_snapshot: buyerOrg?.name ?? null,
   })
-
   if (certErr) {
-    // Don't block the purchase flow — log and let the user re-issue later.
     console.error('[createPurchase] origin cert creation failed:', certErr.message)
+  }
+
+  // If the FSP isn't going to process this material themselves
+  // (e.g., they're an auction house selling greasy wool on),
+  // create a passthrough processing batch + inventory lot so the
+  // material is ready to sell as-is. Volume in = volume out, no
+  // method. The chain-of-custody logic treats it like any other
+  // batch from here on.
+  if (!willProcess) {
+    try {
+      const lotCode = await generatePassthroughLotCode(supabase)
+      const { error: passErr } = await supabase.rpc(
+        'record_processing_batch',
+        {
+          p_lot_code: lotCode,
+          p_inputs: [
+            { raw_purchase_id: newPurchase.id, volume_used: volume },
+          ],
+          p_output_product: productName,
+          p_output_volume: volume,
+          p_processing_method: 'No processing — ready to sell as-is',
+          p_processing_date: shearingDate ?? purchaseDate ?? new Date().toISOString().slice(0, 10),
+          p_subcontractors: null,
+        },
+      )
+      if (passErr) {
+        console.error(
+          '[createPurchase] passthrough batch failed:',
+          passErr.message,
+        )
+        // Non-fatal — purchase + OC are still created. User can
+        // manually create a processing batch later if needed.
+      }
+    } catch (e) {
+      console.error('[createPurchase] passthrough wrap failed:', e)
+    }
   }
 
   revalidatePath('/purchases')
   revalidatePath('/inventory')
   revalidatePath('/certificates')
+  revalidatePath('/sales')
   redirect(`/purchases?created=${encodeURIComponent(code)}`)
 }

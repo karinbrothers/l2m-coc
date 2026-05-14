@@ -45,9 +45,14 @@ export async function generateNextLotCode(): Promise<string> {
  *  - volume[<raw_purchase_id>]   numeric per available raw purchase (0 = skip)
  *  - output_product              text (required)
  *  - output_volume               numeric (required, > 0)
+ *  - output_micron_diameter      numeric (optional)
  *  - processing_method           text (optional)
  *  - processing_date             date (defaults to today)
  *  - subcontractors              text (optional)
+ *
+ * Microns are stored on the inventory_lot via a separate
+ * set_lot_micron RPC after the batch RPC succeeds. The batch
+ * RPC doesn't accept it directly to keep its signature stable.
  */
 export async function createProcessingBatch(formData: FormData) {
   await requireUser()
@@ -55,6 +60,9 @@ export async function createProcessingBatch(formData: FormData) {
 
   const outputProduct = String(formData.get('output_product') ?? '').trim()
   const outputVolumeRaw = String(formData.get('output_volume') ?? '').trim()
+  const outputMicronRaw = String(
+    formData.get('output_micron_diameter') ?? '',
+  ).trim()
   const processingMethod =
     String(formData.get('processing_method') ?? '').trim() || null
   const subcontractors =
@@ -70,6 +78,15 @@ export async function createProcessingBatch(formData: FormData) {
   const outputVolume = Number(outputVolumeRaw)
   if (!Number.isFinite(outputVolume) || outputVolume <= 0) {
     redirect('/processing/new?error=invalid_output_volume')
+  }
+
+  // Microns are optional; validate only if provided.
+  const outputMicron = outputMicronRaw ? Number(outputMicronRaw) : null
+  if (
+    outputMicron != null &&
+    (!Number.isFinite(outputMicron) || outputMicron <= 0)
+  ) {
+    redirect('/processing/new?error=invalid_micron')
   }
 
   // Collect inputs from form: keys like "volume[<purchase_id>]"
@@ -115,6 +132,29 @@ export async function createProcessingBatch(formData: FormData) {
       redirect('/processing/new?error=invalid_input_volume')
     }
     redirect('/processing/new?error=unknown')
+  }
+
+  // If user provided output microns, attach them to the lot we
+  // just created. Direct UPDATE would be blocked by RLS, so use
+  // the security-definer set_lot_micron RPC.
+  if (outputMicron != null) {
+    const { data: lot } = await supabase
+      .from('inventory_lots')
+      .select('id')
+      .eq('code', lotCode)
+      .maybeSingle()
+
+    if (lot?.id) {
+      const { error: micErr } = await supabase.rpc('set_lot_micron', {
+        p_lot_id: lot.id,
+        p_micron: outputMicron,
+      })
+      if (micErr) {
+        console.error('[createProcessingBatch] set_lot_micron failed:', micErr)
+        // Non-fatal — the batch + lot are created, only the
+        // optional micron field is missing.
+      }
+    }
   }
 
   revalidatePath('/processing')

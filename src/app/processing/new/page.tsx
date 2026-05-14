@@ -158,6 +158,29 @@ export default async function NewProcessingBatchPage({
             </div>
           </div>
 
+          <div>
+            <label
+              htmlFor="output_micron_diameter"
+              className="mb-1 block text-sm font-medium text-slate-700"
+            >
+              Output microns (µm)
+            </label>
+            <input
+              id="output_micron_diameter"
+              name="output_micron_diameter"
+              type="number"
+              min="0"
+              step="0.1"
+              placeholder="e.g. 19.5"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              The measured micron of the processed material. When blending
+              wool from multiple sources, this is the output measurement,
+              not any single input.
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label

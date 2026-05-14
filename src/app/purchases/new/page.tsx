@@ -22,6 +22,9 @@ type LandbaseOption = {
 function errorCopy(code: string | undefined): string | null {
   if (!code) return null
   if (code === 'missing_landbase') return 'Please choose a landbase.'
+  if (code === 'missing_shearing_date')
+    return 'Please enter the date of shearing.'
+  if (code === 'missing_product_name') return 'Please pick a product name.'
   if (code === 'invalid_volume') return 'Volume must be a positive number.'
   if (code === 'invalid_fibre')
     return 'Fibre diameter must be a positive number.'
@@ -31,7 +34,7 @@ function errorCopy(code: string | undefined): string | null {
   if (code === 'landbase_missing_verification')
     return 'That landbase has no verification dates on record. Ask an admin to confirm the verification window before recording a purchase.'
   if (code === 'landbase_not_eligible_on_date')
-    return 'That landbase was not eligible on the purchase date you entered. Adjust the date or pick a different landbase.'
+    return 'That landbase was not eligible on the shearing date you entered. Adjust the date or pick a different landbase.'
   if (code === 'code_conflict')
     return 'Two purchases were created at the same instant. Try again.'
   return `Error: ${code}`
@@ -55,10 +58,10 @@ export default async function NewPurchasePage({ searchParams }: PageProps) {
 
   // Load every landbase the FSP has access to (RLS handles supply-
   // group scoping). We deliberately do NOT filter by current
-  // eligibility_status — eligibility is judged against the purchase
+  // eligibility_status — eligibility is judged against the SHEARING
   // date, not "right now". The client-side form filters the
   // dropdown to whichever landbases were eligible on the selected
-  // purchase date.
+  // shearing date.
   const { data: landbases } = await supabase
     .from('landbases')
     .select(
@@ -81,8 +84,8 @@ export default async function NewPurchasePage({ searchParams }: PageProps) {
           New purchase
         </h2>
         <p className="mt-1 text-sm text-slate-600">
-          Record an unprocessed wool purchase from a verified landbase. A
-          purchase code will be generated automatically.
+          Record a wool purchase from a verified landbase. A purchase code
+          will be generated automatically.
         </p>
       </div>
 
