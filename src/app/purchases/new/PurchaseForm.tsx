@@ -17,6 +17,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { createPurchase } from '../actions'
+import { WOOL_PRODUCTS } from '@/lib/products'
 
 type Landbase = {
   id: string
@@ -26,12 +27,6 @@ type Landbase = {
   expiration_date: string | null
   eligibility_status: string | null
 }
-
-const PRODUCT_OPTIONS = [
-  { value: 'Greasy Wool', label: 'Greasy Wool' },
-  { value: 'Clean Wool', label: 'Clean Wool' },
-  { value: 'Wool Tops', label: 'Wool Tops' },
-]
 
 function formatDateShort(iso: string | null): string {
   if (!iso) return '—'
@@ -171,9 +166,9 @@ export default function PurchaseForm({
             defaultValue="Greasy Wool"
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
           >
-            {PRODUCT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
+            {WOOL_PRODUCTS.map((p) => (
+              <option key={p} value={p}>
+                {p}
               </option>
             ))}
           </select>
@@ -204,7 +199,7 @@ export default function PurchaseForm({
             htmlFor="fibre_diameter"
             className="mb-1 block text-sm font-medium text-slate-700"
           >
-            Fibre diameter (µm)
+            Microns (µm)
           </label>
           <input
             id="fibre_diameter"

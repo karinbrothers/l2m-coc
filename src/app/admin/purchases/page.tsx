@@ -174,7 +174,7 @@ export default async function AdminPurchasesPage() {
                   </div>
                   <div>
                     <dt className="text-xs uppercase text-slate-500">
-                      Fibre diam.
+                      Microns
                     </dt>
                     <dd className="text-slate-900 mt-0.5">
                       {p.fibre_diameter != null

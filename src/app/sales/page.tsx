@@ -50,20 +50,30 @@ export default async function SalesPage({ searchParams }: PageProps) {
 
   const isFinalBrand = org?.is_final_brand ?? false
 
-  const { data: sales } = await supabase
-    .from('sales')
-    .select(
-      'id, code, buyer_name, buyer_org_id, volume, volume_unit, sale_date, status, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lots:inventory_lot_id(code, product_name), certificates!related_transaction_id(id)',
-    )
-    .eq('organization_id', user.organization_id)
-    .order('sale_date', { ascending: false })
-    .returns<SaleRow[]>()
+  const [salesRes, lotsRes] = await Promise.all([
+    supabase
+      .from('sales')
+      .select(
+        'id, code, buyer_name, buyer_org_id, volume, volume_unit, sale_date, status, organizations:organization_id(name), buyer_org:buyer_org_id(name), inventory_lots:inventory_lot_id(code, product_name), certificates!related_transaction_id(id)',
+      )
+      .eq('organization_id', user.organization_id)
+      .order('sale_date', { ascending: false })
+      .returns<SaleRow[]>(),
+    supabase
+      .from('inventory_lots')
+      .select('volume_remaining')
+      .eq('organization_id', user.organization_id)
+      .gt('volume_remaining', 0),
+  ])
 
-  const list = sales ?? []
+  const list = salesRes.data ?? []
   const totalVolume = list
     .filter((x) => x.status !== 'rejected' && x.status !== 'expired')
     .reduce((s, x) => s + Number(x.volume), 0)
-  const buyers = new Set(list.map((x) => x.buyer_name))
+  const availableVolume = (lotsRes.data ?? []).reduce(
+    (s, l) => s + Number((l as { volume_remaining: number }).volume_remaining ?? 0),
+    0,
+  )
   const pendingCount = list.filter((x) => x.status === 'pending').length
 
   return (
@@ -104,13 +114,20 @@ export default async function SalesPage({ searchParams }: PageProps) {
           <div className="mt-2 text-3xl font-semibold text-slate-900">{pendingCount}</div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="text-xs font-medium uppercase text-slate-500">
+            Available inventory to sell
+          </div>
+          <div className="mt-2 text-3xl font-semibold text-slate-900">
+            {availableVolume.toFixed(1)} t
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            Sum of remaining volume across your lots
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-xs font-medium uppercase text-slate-500">Volume sold</div>
           <div className="mt-2 text-3xl font-semibold text-slate-900">{totalVolume.toFixed(1)} t</div>
           <div className="mt-1 text-xs text-slate-500">Excludes rejected / expired</div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="text-xs font-medium uppercase text-slate-500">Unique buyers</div>
-          <div className="mt-2 text-3xl font-semibold text-slate-900">{buyers.size}</div>
         </div>
       </div>
 

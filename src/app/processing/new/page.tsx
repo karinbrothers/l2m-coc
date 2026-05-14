@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import { createProcessingBatch } from '../actions'
+import { WOOL_PRODUCTS } from '@/lib/products'
 
 type PageProps = {
   searchParams: Promise<{ error?: string }>
@@ -129,14 +130,22 @@ export default async function NewProcessingBatchPage({
               >
                 Output product <span className="text-red-600">*</span>
               </label>
-              <input
+              <select
                 id="output_product"
                 name="output_product"
-                type="text"
                 required
-                placeholder="e.g. Greasy wool, scoured wool, top"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
-              />
+                defaultValue=""
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
+              >
+                <option value="" disabled>
+                  Select a product…
+                </option>
+                {WOOL_PRODUCTS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label

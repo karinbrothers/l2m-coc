@@ -146,7 +146,7 @@ export default function EditPurchaseButton({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1">
-            Fibre diameter (µm)
+            Microns (µm)
           </label>
           <input
             type="number"
