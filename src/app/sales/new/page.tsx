@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import { createSale } from '../actions'
+import AttestationCheckbox from '@/components/AttestationCheckbox'
 
 type PageProps = {
   searchParams: Promise<{ error?: string }>
@@ -14,6 +15,7 @@ type AvailableLot = {
   product_name: string
   volume_remaining: number
   volume_unit: string
+  output_micron_diameter: number | null
 }
 
 type Org = {
@@ -34,6 +36,8 @@ function errorCopy(code: string | undefined): string | null {
     return 'That inventory lot is not available to your organization.'
   if (code === 'no_organization')
     return 'Your account is not part of an organization.'
+  if (code === 'attestation_required')
+    return 'Please tick the attestation checkbox at the bottom of the form before submitting.'
   return `Error: ${code}`
 }
 
@@ -56,7 +60,9 @@ export default async function NewSalePage({ searchParams }: PageProps) {
   const [lotsRes, orgsRes] = await Promise.all([
     supabase
       .from('inventory_lots')
-      .select('id, code, product_name, volume_remaining, volume_unit')
+      .select(
+        'id, code, product_name, volume_remaining, volume_unit, output_micron_diameter',
+      )
       .eq('organization_id', user.organization_id)
       .gt('volume_remaining', 0)
       .order('code', { ascending: true })
@@ -125,8 +131,12 @@ export default async function NewSalePage({ searchParams }: PageProps) {
               </option>
               {options.map((l) => (
                 <option key={l.id} value={l.id}>
-                  {l.code} — {l.product_name} — {Number(l.volume_remaining)}{' '}
-                  {l.volume_unit} remaining
+                  {l.code} — {l.product_name}
+                  {l.output_micron_diameter != null
+                    ? ` — ${Number(l.output_micron_diameter)} µm`
+                    : ''}
+                  {' — '}
+                  {Number(l.volume_remaining)} {l.volume_unit} remaining
                 </option>
               ))}
             </select>
@@ -251,6 +261,8 @@ export default async function NewSalePage({ searchParams }: PageProps) {
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             />
           </div>
+
+          <AttestationCheckbox />
 
           <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
             <Link

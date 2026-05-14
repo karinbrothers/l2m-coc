@@ -53,6 +53,7 @@ export type TransactionCertificateData = {
     inventory_lot: {
       code: string | null;
       product_name: string | null;
+      output_micron_diameter: number | null;
       processing_batch: ProcessingBatchLite | null;
     } | null;
   } | null;
@@ -251,6 +252,16 @@ export function TransactionCertificate({
                 {shippingNumber ?? '—'}
               </dd>
             </div>
+            {lot?.output_micron_diameter != null ? (
+              <div>
+                <dt className="inline text-xs print:text-[9px] text-slate-700">
+                  Microns:{' '}
+                </dt>
+                <dd className="inline">
+                  {Number(lot.output_micron_diameter)} µm
+                </dd>
+              </div>
+            ) : null}
             {lot?.code ? (
               <div>
                 <dt className="inline text-xs print:text-[9px] text-slate-700">

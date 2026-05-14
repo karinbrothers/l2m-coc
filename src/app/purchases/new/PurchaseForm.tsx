@@ -18,6 +18,7 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { createPurchase } from '../actions'
 import { WOOL_PRODUCTS } from '@/lib/products'
+import AttestationCheckbox from '@/components/AttestationCheckbox'
 
 type Landbase = {
   id: string
@@ -236,7 +237,7 @@ export default function PurchaseForm({
           htmlFor="batch_number"
           className="mb-1 block text-sm font-medium text-slate-700"
         >
-          Batch number
+          Batch/lot number
         </label>
         <input
           id="batch_number"
@@ -284,6 +285,8 @@ export default function PurchaseForm({
           </label>
         </div>
       </fieldset>
+
+      <AttestationCheckbox />
 
       <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
         <Link

@@ -63,6 +63,7 @@ export default async function CertificateDetailPage({
         inventory_lot:inventory_lot_id (
           code,
           product_name,
+          output_micron_diameter,
           processing_batch:processing_batch_id (
             input_total_volume,
             output_volume,

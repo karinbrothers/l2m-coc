@@ -37,6 +37,8 @@ function errorCopy(code: string | undefined): string | null {
     return 'That landbase was not eligible on the shearing date you entered. Adjust the date or pick a different landbase.'
   if (code === 'code_conflict')
     return 'Two purchases were created at the same instant. Try again.'
+  if (code === 'attestation_required')
+    return 'Please tick the attestation checkbox at the bottom of the form before submitting.'
   return `Error: ${code}`
 }
 

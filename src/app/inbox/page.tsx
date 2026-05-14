@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import EmptyState from '@/components/EmptyState'
+import AttestationCheckbox from '@/components/AttestationCheckbox'
 import { acceptSale, rejectSale } from './actions'
 
 type PageProps = {
@@ -26,7 +27,11 @@ type IncomingSale = {
   response_notes: string | null
   created_at: string
   seller: { name: string } | null
-  inventory_lot: { code: string; product_name: string } | null
+  inventory_lot: {
+    code: string
+    product_name: string
+    output_micron_diameter: number | null
+  } | null
 }
 
 function statusBadge(status: IncomingSale['status']) {
@@ -82,7 +87,7 @@ export default async function InboxPage({ searchParams }: PageProps) {
   const { data: sales } = await supabase
     .from('sales')
     .select(
-      'id, code, volume, volume_unit, sale_date, notes, status, response_deadline, accepted_at, rejected_at, response_notes, created_at, seller:organization_id(name), inventory_lot:inventory_lot_id(code, product_name)',
+      'id, code, volume, volume_unit, sale_date, notes, status, response_deadline, accepted_at, rejected_at, response_notes, created_at, seller:organization_id(name), inventory_lot:inventory_lot_id(code, product_name, output_micron_diameter)',
     )
     .eq('buyer_org_id', user.organization_id)
     .order('created_at', { ascending: false })
@@ -145,7 +150,9 @@ export default async function InboxPage({ searchParams }: PageProps) {
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          Error: {error}
+          {error === 'attestation_required'
+            ? 'Please tick the attestation checkbox to accept this sale.'
+            : `Error: ${error}`}
         </div>
       ) : null}
 
@@ -188,6 +195,11 @@ export default async function InboxPage({ searchParams }: PageProps) {
                       </dd>
                       {s.inventory_lot?.product_name ? (
                         <div className="text-xs text-slate-500">{s.inventory_lot.product_name}</div>
+                      ) : null}
+                      {s.inventory_lot?.output_micron_diameter != null ? (
+                        <div className="text-xs text-slate-500">
+                          {Number(s.inventory_lot.output_micron_diameter)} µm
+                        </div>
                       ) : null}
                     </div>
                     <div>
@@ -264,6 +276,12 @@ export default async function InboxPage({ searchParams }: PageProps) {
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   />
                 </div>
+
+                <AttestationCheckbox browserRequired={false} />
+                <p className="-mt-1 text-xs text-slate-500">
+                  Required to accept. Not required to reject.
+                </p>
+
                 <div className="flex gap-2">
                   <button
                     type="submit"

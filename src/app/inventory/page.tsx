@@ -9,6 +9,7 @@ type RawPurchase = {
   volume_unit: string
   commodity_type: string
   purchase_date: string
+  fibre_diameter: number | null
   source_sale_id: string | null
   landbases: { name: string } | null
   source_sale: { seller_org: { name: string } | null } | null
@@ -21,6 +22,7 @@ type Lot = {
   volume_remaining: number
   total_volume: number
   volume_unit: string
+  output_micron_diameter: number | null
   processing_batches: { processing_date: string } | null
 }
 
@@ -32,7 +34,7 @@ export default async function InventoryPage() {
     supabase
       .from('raw_material_purchases')
       .select(
-        'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, source_sale_id, landbases:landbase_id(name), source_sale:sales!source_sale_id(seller_org:organization_id(name))',
+        'id, code, volume_remaining, volume_unit, commodity_type, purchase_date, fibre_diameter, source_sale_id, landbases:landbase_id(name), source_sale:sales!source_sale_id(seller_org:organization_id(name))',
       )
       .gt('volume_remaining', 0)
       .order('purchase_date', { ascending: false })
@@ -40,7 +42,7 @@ export default async function InventoryPage() {
     supabase
       .from('inventory_lots')
       .select(
-        'id, code, product_name, volume_remaining, total_volume, volume_unit, processing_batches:processing_batch_id(processing_date)',
+        'id, code, product_name, volume_remaining, total_volume, volume_unit, output_micron_diameter, processing_batches:processing_batch_id(processing_date)',
       )
       .gt('volume_remaining', 0)
       .order('code', { ascending: false })
@@ -101,6 +103,7 @@ export default async function InventoryPage() {
               <tr>
                 <th className="px-6 py-3">Purchase</th>
                 <th className="px-6 py-3">Commodity</th>
+                <th className="px-6 py-3">Microns</th>
                 <th className="px-6 py-3">Landbase</th>
                 <th className="px-6 py-3">Purchased</th>
                 <th className="px-6 py-3">Remaining</th>
@@ -112,6 +115,11 @@ export default async function InventoryPage() {
                 <tr key={r.id} className="border-t border-slate-100">
                   <td className="px-6 py-3 font-mono text-xs">{r.code}</td>
                   <td className="px-6 py-3 capitalize">{r.commodity_type}</td>
+                  <td className="px-6 py-3 text-slate-700">
+                    {r.fibre_diameter != null
+                      ? `${Number(r.fibre_diameter)} µm`
+                      : '—'}
+                  </td>
                   <td className="px-6 py-3">
                     {r.source_sale_id
                       ? `Received from ${r.source_sale?.seller_org?.name ?? 'unknown'}`
@@ -151,6 +159,7 @@ export default async function InventoryPage() {
               <tr>
                 <th className="px-6 py-3">Lot</th>
                 <th className="px-6 py-3">Product</th>
+                <th className="px-6 py-3">Microns</th>
                 <th className="px-6 py-3">Processed</th>
                 <th className="px-6 py-3">Remaining / total</th>
               </tr>
@@ -160,6 +169,11 @@ export default async function InventoryPage() {
                 <tr key={l.id} className="border-t border-slate-100">
                   <td className="px-6 py-3 font-mono text-xs">{l.code}</td>
                   <td className="px-6 py-3">{l.product_name}</td>
+                  <td className="px-6 py-3 text-slate-700">
+                    {l.output_micron_diameter != null
+                      ? `${Number(l.output_micron_diameter)} µm`
+                      : '—'}
+                  </td>
                   <td className="px-6 py-3 text-slate-600">
                     {l.processing_batches?.processing_date ?? '—'}
                   </td>

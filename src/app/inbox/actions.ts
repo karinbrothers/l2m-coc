@@ -54,9 +54,13 @@ export async function acceptSale(formData: FormData) {
   const willProcess =
     String(formData.get('will_process') ?? 'yes').trim().toLowerCase() ===
     'yes'
+  const attested = String(formData.get('attest') ?? '').trim() === 'on'
 
   if (!saleId) {
     redirect('/inbox?error=missing_id')
+  }
+  if (!attested) {
+    redirect('/inbox?error=attestation_required')
   }
 
   const { data, error: rpcErr } = await supabase.rpc('accept_sale', {
@@ -72,6 +76,19 @@ export async function acceptSale(formData: FormData) {
   const sale = data as SaleRow | null
 
   if (sale) {
+    // Stamp acceptance attestation on the sale via SECURITY DEFINER
+    // RPC (direct UPDATE is blocked by RLS).
+    const { error: attErr } = await supabase.rpc(
+      'set_sale_acceptance_attestation',
+      {
+        p_sale_id: sale.id,
+        p_attested_by: user.id,
+      },
+    )
+    if (attErr) {
+      console.error('[acceptSale] attestation stamp failed:', attErr.message)
+    }
+
     const [{ data: buyerOrg }, { data: sellerOrg }, { data: tc }] =
       await Promise.all([
         supabase
@@ -114,21 +131,35 @@ export async function acceptSale(formData: FormData) {
       })
     }
 
-    // No-process path: accept_sale created a received purchase
-    // for the buyer (organization_id = us, source_sale_id = the
-    // sale, no landbase_id). If buyer said "I'm not processing
-    // this", auto-create a passthrough lot from it so it's
-    // ready to sell immediately.
-    if (!willProcess) {
-      try {
-        const { data: receivedPurchase } = await supabase
-          .from('raw_material_purchases')
-          .select('id, volume, volume_unit, product_name')
-          .eq('source_sale_id', sale.id)
-          .eq('organization_id', user.organization_id)
-          .maybeSingle()
+    // accept_sale creates a received purchase for the buyer
+    // (organization_id = us, source_sale_id = this sale, no
+    // landbase_id). Always stamp our attestation on it.
+    try {
+      const { data: receivedPurchase } = await supabase
+        .from('raw_material_purchases')
+        .select('id, volume, volume_unit, product_name')
+        .eq('source_sale_id', sale.id)
+        .eq('organization_id', user.organization_id)
+        .maybeSingle()
 
-        if (receivedPurchase) {
+      if (receivedPurchase) {
+        const { error: attRpErr } = await supabase.rpc(
+          'set_received_purchase_attestation',
+          {
+            p_purchase_id: receivedPurchase.id,
+            p_attested_by: user.id,
+          },
+        )
+        if (attRpErr) {
+          console.error(
+            '[acceptSale] received-purchase attestation failed:',
+            attRpErr.message,
+          )
+        }
+
+        // No-process path: auto-create a passthrough lot from it
+        // so it's ready to sell immediately.
+        if (!willProcess) {
           const lotCode = await generatePassthroughLotCode(supabase)
           const { error: passErr } = await supabase.rpc(
             'record_processing_batch',
@@ -156,9 +187,9 @@ export async function acceptSale(formData: FormData) {
             // Non-fatal — the acceptance + TC are still good.
           }
         }
-      } catch (e) {
-        console.error('[acceptSale] passthrough wrap failed:', e)
       }
+    } catch (e) {
+      console.error('[acceptSale] received-purchase wrap failed:', e)
     }
   }
 

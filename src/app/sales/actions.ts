@@ -39,9 +39,11 @@ export async function createSale(formData: FormData) {
     String(formData.get('shipping_number') ?? '').trim() || null
   const countryOfDispatch =
     String(formData.get('country_of_dispatch') ?? '').trim() || null
+  const attested = String(formData.get('attest') ?? '').trim() === 'on'
 
   if (!inventoryLotId) redirect('/sales/new?error=missing_source')
   if (!buyerOrgId) redirect('/sales/new?error=missing_buyer_org')
+  if (!attested) redirect('/sales/new?error=attestation_required')
 
   const volume = Number(volumeRaw)
   if (!Number.isFinite(volume) || volume <= 0) {
@@ -83,18 +85,18 @@ export async function createSale(formData: FormData) {
     redirect('/sales/new?error=unknown')
   }
 
-  // record_sale doesn't accept the optional dispatch fields —
-  // set them via a SECURITY DEFINER RPC since direct UPDATE is
-  // blocked by RLS (sellers don't have a broad UPDATE policy
-  // on sales).
-  if (shippingNumber || countryOfDispatch) {
-    const { data: createdSale } = await supabase
-      .from('sales')
-      .select('id')
-      .eq('code', code)
-      .maybeSingle()
+  // Look up the sale we just inserted so we can stamp dispatch
+  // info + attestation. record_sale doesn't accept those fields
+  // and a direct UPDATE would be blocked by RLS — so we use
+  // SECURITY DEFINER RPCs.
+  const { data: createdSale } = await supabase
+    .from('sales')
+    .select('id')
+    .eq('code', code)
+    .maybeSingle()
 
-    if (createdSale?.id) {
+  if (createdSale?.id) {
+    if (shippingNumber || countryOfDispatch) {
       const { error: setErr } = await supabase.rpc(
         'set_sale_dispatch_info',
         {
@@ -111,6 +113,16 @@ export async function createSale(formData: FormData) {
         // Non-fatal — the sale exists, only the optional fields
         // are missing. Surface in logs for follow-up.
       }
+    }
+
+    // Stamp attestation on the sale. Uses a SECURITY DEFINER
+    // RPC for the same RLS reason as dispatch info.
+    const { error: attErr } = await supabase.rpc('set_sale_attestation', {
+      p_sale_id: createdSale.id,
+      p_attested_by: user.id,
+    })
+    if (attErr) {
+      console.error('[createSale] set_sale_attestation error:', attErr)
     }
   }
 

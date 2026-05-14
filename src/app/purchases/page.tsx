@@ -187,7 +187,7 @@ export default async function PurchasesPage() {
                 <th className="px-6 py-3">Purchased</th>
                 <th className="px-6 py-3">Volume</th>
                 <th className="px-6 py-3">Remaining</th>
-                <th className="px-6 py-3">Diameter</th>
+                <th className="px-6 py-3">Microns</th>
                 <th className="px-6 py-3">Clip yr.</th>
                 <th className="px-6 py-3">Certificate</th>
               </tr>

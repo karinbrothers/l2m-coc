@@ -65,6 +65,7 @@ export async function createPurchase(formData: FormData) {
   const willProcess =
     String(formData.get('will_process') ?? 'yes').trim().toLowerCase() ===
     'yes'
+  const attested = String(formData.get('attest') ?? '').trim() === 'on'
 
   if (!landbaseId) {
     redirect('/purchases/new?error=missing_landbase')
@@ -74,6 +75,9 @@ export async function createPurchase(formData: FormData) {
   }
   if (!productName) {
     redirect('/purchases/new?error=missing_product_name')
+  }
+  if (!attested) {
+    redirect('/purchases/new?error=attestation_required')
   }
 
   const volume = Number(volumeRaw)
@@ -139,6 +143,8 @@ export async function createPurchase(formData: FormData) {
       year_of_clip: yearOfClip,
       batch_number: batchNumber,
       purchase_date: purchaseDate,
+      attested_at: new Date().toISOString(),
+      attested_by: user.id,
     })
     .select('id, code')
     .single()

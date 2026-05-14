@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 import { createProcessingBatch } from '../actions'
 import { WOOL_PRODUCTS } from '@/lib/products'
+import AttestationCheckbox from '@/components/AttestationCheckbox'
 
 type PageProps = {
   searchParams: Promise<{ error?: string }>
@@ -32,6 +33,8 @@ function errorCopy(code: string | undefined): string | null {
     return 'A selected source is not available to your organization.'
   if (code === 'no_organization')
     return 'Your account is not part of an organization.'
+  if (code === 'attestation_required')
+    return 'Please tick the attestation checkbox at the bottom of the form before submitting.'
   return `Error: ${code}`
 }
 
@@ -238,6 +241,8 @@ export default async function NewProcessingBatchPage({
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359]"
             />
           </div>
+
+          <AttestationCheckbox />
 
           <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
             <Link

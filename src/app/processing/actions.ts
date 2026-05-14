@@ -55,8 +55,13 @@ export async function generateNextLotCode(): Promise<string> {
  * RPC doesn't accept it directly to keep its signature stable.
  */
 export async function createProcessingBatch(formData: FormData) {
-  await requireUser()
+  const user = await requireUser()
   const supabase = await createClient()
+
+  const attested = String(formData.get('attest') ?? '').trim() === 'on'
+  if (!attested) {
+    redirect('/processing/new?error=attestation_required')
+  }
 
   const outputProduct = String(formData.get('output_product') ?? '').trim()
   const outputVolumeRaw = String(formData.get('output_volume') ?? '').trim()
@@ -155,6 +160,27 @@ export async function createProcessingBatch(formData: FormData) {
         // optional micron field is missing.
       }
     }
+  }
+
+  // Stamp attestation on the processing batch we just created.
+  // Look it up by inventory_lot.code → inventory_lot_id.
+  try {
+    const { data: lot } = await supabase
+      .from('inventory_lots')
+      .select('id')
+      .eq('code', lotCode)
+      .maybeSingle()
+    if (lot?.id) {
+      await supabase
+        .from('processing_batches')
+        .update({
+          attested_at: new Date().toISOString(),
+          attested_by: user.id,
+        })
+        .eq('inventory_lot_id', lot.id)
+    }
+  } catch (e) {
+    console.error('[createProcessingBatch] attestation stamp failed:', e)
   }
 
   revalidatePath('/processing')
