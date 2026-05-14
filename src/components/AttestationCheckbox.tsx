@@ -33,8 +33,8 @@ export default function AttestationCheckbox({
             from NON–Land to Market Verified livestock-derived materials
             throughout our ownership of the product(s) (including any storage,
             transportation, processing, and handling by subcontractors), and
-            have been handled in accordance with the Land to Market Standard
-            guidelines.
+            have been handled in accordance with the Land to Market
+            Guidelines.
           </span>
         </label>
       </fieldset>
