@@ -83,6 +83,7 @@ export default async function RootLayout({
                 <Link href="/inbox" className={linkClass}>Inbox</Link>
                 <Link href="/partner-requests" className={linkClass}>Partner Requests</Link>
                 <Link href="/certificates" className={linkClass}>Certificates</Link>
+                <Link href="/traceability" className={linkClass}>Traceability</Link>
                 <Link href="/help" className={linkClass}>Help</Link>
                 {isAdmin ? (
                   <>

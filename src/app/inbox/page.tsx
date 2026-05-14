@@ -218,6 +218,41 @@ export default async function InboxPage({ searchParams }: PageProps) {
               </div>
               <form className="mt-4 space-y-3 border-t border-slate-100 pt-4">
                 <input type="hidden" name="sale_id" value={s.id} />
+
+                <fieldset className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <legend className="px-2 text-xs font-medium text-slate-700">
+                    If you accept, will you process this material further
+                    (yourself or via subcontractors)?
+                  </legend>
+                  <div className="mt-2 space-y-1.5">
+                    <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="will_process"
+                        value="yes"
+                        defaultChecked
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <strong>Yes</strong> — I&rsquo;ll record processing
+                        before selling onward.
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="will_process"
+                        value="no"
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <strong>No</strong> — material goes straight to
+                        ready-to-sell inventory.
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
+
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-700">
                     Response notes (optional)

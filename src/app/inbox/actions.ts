@@ -21,6 +21,29 @@ type SaleRow = {
   status: 'pending' | 'accepted' | 'rejected' | 'expired'
 }
 
+// Helper: inline lot code generator for the passthrough path
+// (same shape as the one in purchases/actions.ts).
+async function generatePassthroughLotCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<string> {
+  const year = new Date().getFullYear()
+  const prefix = `LOT-${year}-`
+  const { data } = await supabase
+    .from('inventory_lots')
+    .select('code')
+    .like('code', `${prefix}%`)
+    .order('code', { ascending: false })
+    .limit(1)
+
+  let nextNum = 1
+  if (data && data.length > 0) {
+    const tail = (data[0].code as string).slice(prefix.length)
+    const parsed = parseInt(tail, 10)
+    if (!Number.isNaN(parsed)) nextNum = parsed + 1
+  }
+  return `${prefix}${String(nextNum).padStart(4, '0')}`
+}
+
 export async function acceptSale(formData: FormData) {
   const user = await requireUser()
   const supabase = await createClient()
@@ -28,6 +51,9 @@ export async function acceptSale(formData: FormData) {
   const saleId = String(formData.get('sale_id') ?? '').trim()
   const responseNotes =
     String(formData.get('response_notes') ?? '').trim() || null
+  const willProcess =
+    String(formData.get('will_process') ?? 'yes').trim().toLowerCase() ===
+    'yes'
 
   if (!saleId) {
     redirect('/inbox?error=missing_id')
@@ -43,14 +69,9 @@ export async function acceptSale(formData: FormData) {
     redirect(`/inbox?error=${encodeURIComponent(rpcErr.message)}`)
   }
 
-  // accept_sale RPC also issues the TC server-side and creates the
-  // buyer's received raw_material_purchases row.
-
   const sale = data as SaleRow | null
 
   if (sale) {
-    // Fetch buyer org name, seller org name, and the freshly-issued
-    // TC in parallel so we can fire both notification emails.
     const [{ data: buyerOrg }, { data: sellerOrg }, { data: tc }] =
       await Promise.all([
         supabase
@@ -74,7 +95,6 @@ export async function acceptSale(formData: FormData) {
     const buyerOrgName = buyerOrg?.name ?? 'a partner'
     const sellerOrgName = sellerOrg?.name ?? 'a partner'
 
-    // Email the seller: "your sale was accepted".
     await notifySaleAccepted(supabase, {
       saleCode: sale.code,
       buyerOrgName,
@@ -83,9 +103,6 @@ export async function acceptSale(formData: FormData) {
       notes: responseNotes,
     })
 
-    // Email the buyer: "your transaction certificate is ready".
-    // Useful for distribution — operations clicks accept, but
-    // compliance / marketing also want the cert link.
     if (tc) {
       await notifyCertificateIssued(supabase, {
         certId: tc.id,
@@ -96,6 +113,53 @@ export async function acceptSale(formData: FormData) {
         volume: sale.volume,
       })
     }
+
+    // No-process path: accept_sale created a received purchase
+    // for the buyer (organization_id = us, source_sale_id = the
+    // sale, no landbase_id). If buyer said "I'm not processing
+    // this", auto-create a passthrough lot from it so it's
+    // ready to sell immediately.
+    if (!willProcess) {
+      try {
+        const { data: receivedPurchase } = await supabase
+          .from('raw_material_purchases')
+          .select('id, volume, volume_unit, product_name')
+          .eq('source_sale_id', sale.id)
+          .eq('organization_id', user.organization_id)
+          .maybeSingle()
+
+        if (receivedPurchase) {
+          const lotCode = await generatePassthroughLotCode(supabase)
+          const { error: passErr } = await supabase.rpc(
+            'record_processing_batch',
+            {
+              p_lot_code: lotCode,
+              p_inputs: [
+                {
+                  raw_purchase_id: receivedPurchase.id,
+                  volume_used: receivedPurchase.volume,
+                },
+              ],
+              p_output_product: receivedPurchase.product_name ?? 'Wool',
+              p_output_volume: receivedPurchase.volume,
+              p_processing_method:
+                'No further processing — ready to sell as-is',
+              p_processing_date: new Date().toISOString().slice(0, 10),
+              p_subcontractors: null,
+            },
+          )
+          if (passErr) {
+            console.error(
+              '[acceptSale] passthrough batch failed:',
+              passErr.message,
+            )
+            // Non-fatal — the acceptance + TC are still good.
+          }
+        }
+      } catch (e) {
+        console.error('[acceptSale] passthrough wrap failed:', e)
+      }
+    }
   }
 
   revalidatePath('/inbox')
@@ -103,6 +167,7 @@ export async function acceptSale(formData: FormData) {
   revalidatePath('/certificates')
   revalidatePath('/inventory')
   revalidatePath('/purchases')
+  revalidatePath('/traceability')
   redirect('/inbox?accepted=1')
 }
 
@@ -130,7 +195,6 @@ export async function rejectSale(formData: FormData) {
 
   const sale = data as SaleRow | null
 
-  // Notify the seller org
   if (sale) {
     const { data: buyerOrg } = await supabase
       .from('organizations')
