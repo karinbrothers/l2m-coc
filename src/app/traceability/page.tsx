@@ -1,99 +1,73 @@
 // src/app/traceability/page.tsx
 //
-// Partner-facing supply chain view. Same chain-card layout as
-// /admin/activity, but uses the regular auth client so chain
-// visibility goes through the existing user_can_see_cert RLS —
-// each partner only sees chains their organization is part of.
-//
-// - A brand at the end of a chain sees every step back to landbase.
-// - A middle processor sees chains that pass through them.
-// - An FSP sees chains starting from their own purchases.
+// Partner-facing supply chain view. One card per sale the user
+// directly participates in (seller OR buyer). For each card,
+// renders the full chain via get_trace_by_sale_code:
+//   - Step 1: every origin landbase (multiple if the batch
+//     was blended from multiple farms)
+//   - Steps 2..N: every sale hop, with seller → buyer and
+//     a link to that sale's TC
 
 import Link from 'next/link'
+import { requireUser } from '@/lib/auth/requireUser'
 import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-type OcRow = {
+type SaleRow = {
   id: string
-  certificate_number: string | null
-  issued_at: string
-  voided_at: string | null
-  landbase_name_snapshot: string | null
-  country_snapshot: string | null
-  eligibility_status_snapshot: string | null
-  buyer_org_name_snapshot: string | null
-  purchase_code: string | null
-  volume: number | null
-  volume_unit: string | null
-  purchase_date: string | null
-  raw_material_purchases: {
-    id: string
+  code: string
+  sale_date: string | null
+  organization_id: string
+  buyer_org_id: string | null
+}
+
+type TraceInput = {
+  volume_attributed: number | null
+  raw_purchase: {
     code: string
     purchase_date: string | null
     volume: number
     volume_unit: string
-    organizations: { name: string | null } | null
-    landbases: {
-      name: string | null
-      country: string | null
-      eligibility_status: string | null
-    } | null
-  } | null
-}
-
-type ChainTcRow = {
-  origin_certificate_id: string
-  volume_attributed: number | null
-  certificates: {
+  }
+  landbase: {
+    name: string
+    country: string | null
+    eligibility_status: string
+  }
+  purchasing_org: { name: string } | null
+  origin_certificate: {
     id: string
     certificate_number: string | null
-    issued_at: string
-    voided_at: string | null
-    sale_code: string | null
-    seller_org_name_snapshot: string | null
-    buyer_name_snapshot: string | null
-    sales: {
-      code: string | null
-      sale_date: string | null
-      volume: number
-      volume_unit: string | null
-      status: string
-      inventory_lot: { product_name: string | null } | null
-    } | null
   } | null
 }
 
 type ChainStep = {
-  saleCode: string
-  saleDate: string | null
+  sale_code: string
+  sale_date: string | null
   volume: number
-  volumeUnit: string | null
-  status: string
-  productName: string | null
-  sellerName: string
-  buyerName: string
-  tcId: string
-  tcNumber: string | null
-  tcIssuedAt: string
-  tcVoided: boolean
+  volume_unit: string
+  product_name: string | null
+  seller: { name: string }
+  buyer: { name: string }
+  transaction_certificate: {
+    id: string
+    certificate_number: string | null
+  } | null
 }
 
-type Chain = {
-  ocId: string
-  ocNumber: string | null
-  ocVoided: boolean
-  purchaseCode: string
-  purchaseDate: string | null
-  fspName: string
-  landbaseName: string
-  landbaseCountry: string | null
-  eligibilityStatus: string
-  originVolume: number
-  volumeUnit: string
-  steps: ChainStep[]
-  latestActivityAt: string
-}
+type TraceData = {
+  sale: {
+    code: string
+    buyer_name: string
+    volume: number
+    volume_unit: string
+    sale_date: string | null
+  }
+  inputs: TraceInput[]
+  sale_chain: ChainStep[]
+  organization: { name: string }
+} | null
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
@@ -102,18 +76,6 @@ function formatDate(iso: string | null): string {
     month: 'long',
     day: 'numeric',
   })
-}
-
-function timeAgo(iso: string, now: number): string {
-  const ms = now - new Date(iso).getTime()
-  const min = Math.floor(ms / 60000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day}d ago`
-  return `${Math.floor(day / 30)}mo ago`
 }
 
 function EligibilityBadge({ status }: { status: string }) {
@@ -139,296 +101,273 @@ function EligibilityBadge({ status }: { status: string }) {
 }
 
 export default async function TraceabilityPage() {
+  const user = await requireUser()
   const supabase = await createClient()
 
-  // RLS scopes both queries to chains this user can see.
-  const { data: ocsRaw } = await supabase
-    .from('certificates')
-    .select(
-      `
-      id, certificate_number, issued_at, voided_at,
-      landbase_name_snapshot, country_snapshot, eligibility_status_snapshot,
-      buyer_org_name_snapshot, purchase_code, volume, volume_unit,
-      purchase_date,
-      raw_material_purchases:related_purchase_id (
-        id, code, purchase_date, volume, volume_unit,
-        organizations:organization_id (name),
-        landbases:landbase_id (name, country, eligibility_status)
-      )
-      `,
-    )
-    .eq('type', 'origin')
-    .order('issued_at', { ascending: false })
+  // Sales the user's org directly participates in (as seller or
+  // buyer). These are the "endpoints" we render cards for; the
+  // chain that leads to each is fetched via the trace RPC.
+  const [sellerRes, buyerRes] = await Promise.all([
+    supabase
+      .from('sales')
+      .select('id, code, sale_date, organization_id, buyer_org_id')
+      .eq('organization_id', user.organization_id),
+    supabase
+      .from('sales')
+      .select('id, code, sale_date, organization_id, buyer_org_id')
+      .eq('buyer_org_id', user.organization_id),
+  ])
 
-  const ocs = (ocsRaw ?? []) as unknown as OcRow[]
+  const all = [
+    ...((sellerRes.data ?? []) as SaleRow[]),
+    ...((buyerRes.data ?? []) as SaleRow[]),
+  ]
+  // Dedupe by id, then sort newest first
+  const seen = new Set<string>()
+  const sales = all
+    .filter((s) => {
+      if (seen.has(s.id)) return false
+      seen.add(s.id)
+      return true
+    })
+    .sort((a, b) => {
+      const ax = a.sale_date ? new Date(a.sale_date).getTime() : 0
+      const bx = b.sale_date ? new Date(b.sale_date).getTime() : 0
+      return bx - ax
+    })
 
-  const ocIds = ocs.map((o) => o.id)
-  let tcs: ChainTcRow[] = []
-  if (ocIds.length > 0) {
-    const { data: tcsRaw } = await supabase
-      .from('certificate_origin_links')
-      .select(
-        `
-        origin_certificate_id, volume_attributed,
-        certificates:transaction_certificate_id (
-          id, certificate_number, issued_at, voided_at, sale_code,
-          seller_org_name_snapshot, buyer_name_snapshot,
-          sales:related_transaction_id (
-            code, sale_date, volume, volume_unit, status,
-            inventory_lot:inventory_lot_id (product_name)
-          )
-        )
-        `,
-      )
-      .in('origin_certificate_id', ocIds)
-    tcs = (tcsRaw ?? []) as unknown as ChainTcRow[]
-  }
-
-  const chains: Chain[] = []
-  for (const oc of ocs) {
-    // Some rows might be missing the join (RLS could allow OC but
-    // strip purchase join). Use snapshot fields as fallback.
-    const purchase = oc.raw_material_purchases
-    const landbase = purchase?.landbases
-    const fspName =
-      purchase?.organizations?.name ??
-      oc.buyer_org_name_snapshot ??
-      '—'
-    const landbaseName = landbase?.name ?? oc.landbase_name_snapshot ?? '—'
-    const landbaseCountry = landbase?.country ?? oc.country_snapshot ?? null
-    const eligibility =
-      landbase?.eligibility_status ?? oc.eligibility_status_snapshot ?? '—'
-    const purchaseCode = purchase?.code ?? oc.purchase_code ?? '—'
-    const purchaseDate = purchase?.purchase_date ?? oc.purchase_date ?? null
-    const originVolume = purchase?.volume ?? oc.volume ?? 0
-    const volumeUnit = purchase?.volume_unit ?? oc.volume_unit ?? 'tonnes'
-
-    const tcsForThisOc = tcs.filter((t) => t.origin_certificate_id === oc.id)
-    const steps: ChainStep[] = []
-    for (const t of tcsForThisOc) {
-      const tc = t.certificates
-      const sale = tc?.sales
-      if (!tc) continue
-      steps.push({
-        saleCode: tc.sale_code ?? sale?.code ?? '—',
-        saleDate: sale?.sale_date ?? null,
-        volume: sale?.volume ?? 0,
-        volumeUnit: sale?.volume_unit ?? null,
-        status: sale?.status ?? 'unknown',
-        productName: sale?.inventory_lot?.product_name ?? null,
-        sellerName: tc.seller_org_name_snapshot ?? '—',
-        buyerName: tc.buyer_name_snapshot ?? '—',
-        tcId: tc.id,
-        tcNumber: tc.certificate_number,
-        tcIssuedAt: tc.issued_at,
-        tcVoided: !!tc.voided_at,
+  // Trace each sale in parallel
+  const traces = await Promise.all(
+    sales.map(async (s) => {
+      const { data } = await supabase.rpc('get_trace_by_sale_code', {
+        p_code: s.code,
       })
-    }
-    steps.sort((a, b) => {
-      const ax = a.saleDate ? new Date(a.saleDate).getTime() : 0
-      const bx = b.saleDate ? new Date(b.saleDate).getTime() : 0
-      return ax - bx
-    })
-
-    const latest =
-      steps.length > 0 ? steps[steps.length - 1].tcIssuedAt : oc.issued_at
-
-    chains.push({
-      ocId: oc.id,
-      ocNumber: oc.certificate_number,
-      ocVoided: !!oc.voided_at,
-      purchaseCode,
-      purchaseDate,
-      fspName,
-      landbaseName,
-      landbaseCountry,
-      eligibilityStatus: eligibility,
-      originVolume,
-      volumeUnit,
-      steps,
-      latestActivityAt: latest,
-    })
-  }
-
-  chains.sort(
-    (a, b) =>
-      new Date(b.latestActivityAt).getTime() -
-      new Date(a.latestActivityAt).getTime(),
+      return { sale: s, trace: data as TraceData }
+    }),
   )
 
-  // eslint-disable-next-line react-hooks/purity
-  const now = Date.now()
+  const visibleTraces = traces.filter((t) => t.trace !== null)
 
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Traceability</h1>
         <p className="mt-1 text-sm text-slate-600 max-w-2xl">
-          Every chain your organization is part of, from origin landbase
-          forward through every accepted sale. Most recently active chains
-          appear first.
+          One card per sale your organization is part of. Each card shows the
+          full chain — every landbase at origin (multiple if the batch was
+          blended) and every sale step leading to the current one. Click any
+          certificate to view it.
         </p>
       </div>
 
-      {chains.length === 0 ? (
+      {visibleTraces.length === 0 ? (
         <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-500">
-          No chains yet. Once material flows through your organization,
-          chains will appear here.
+          No chains yet. Once your organization is part of a sale, the chain
+          will appear here.
         </div>
       ) : (
         <div className="space-y-8">
-          {chains.map((chain) => (
-            <article
-              key={chain.ocId}
-              className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
-            >
-              <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-                <div>
-                  <div className="text-xs uppercase tracking-wide text-slate-500">
-                    Chain · originating purchase {chain.purchaseCode}
-                  </div>
-                  <div className="mt-1 text-base text-slate-900">
-                    {chain.fspName} sourcing {chain.originVolume}{' '}
-                    {chain.volumeUnit} from{' '}
-                    <strong>{chain.landbaseName}</strong>
-                    {chain.landbaseCountry ? (
-                      <span className="text-slate-500">
-                        {' '}
-                        · {chain.landbaseCountry}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="text-xs text-slate-500">
-                  Last activity {timeAgo(chain.latestActivityAt, now)}
-                </div>
-              </header>
+          {visibleTraces.map(({ sale, trace }) => {
+            if (!trace) return null
+            const finalSeller = trace.organization?.name ?? '—'
+            const finalBuyer = trace.sale?.buyer_name ?? '—'
+            const inputs = trace.inputs ?? []
+            const saleChain = trace.sale_chain ?? []
 
-              <div className="space-y-3">
-                <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-wrap items-baseline justify-between gap-3">
+            return (
+              <article
+                key={sale.id}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-6"
+              >
+                <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">
+                      Chain · ending at sale {trace.sale.code}
+                    </div>
+                    <div className="mt-1 text-base text-slate-900">
+                      <strong>{finalSeller}</strong>
+                      <span className="text-slate-400 mx-1">→</span>
+                      <strong>{finalBuyer}</strong>
+                      <span className="ml-2 text-slate-500">
+                        · {trace.sale.volume} {trace.sale.volume_unit}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {formatDate(trace.sale.sale_date)}
+                  </div>
+                </header>
+
+                <div className="space-y-3">
+                  {/* Step 1: Origin landbase(s) */}
+                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Step 1 · Origin landbase
+                      {inputs.length > 1 ? 's' : ''}
                     </div>
-                    <EligibilityBadge status={chain.eligibilityStatus} />
-                  </div>
-                  <div className="mt-2 text-lg font-semibold text-slate-900">
-                    {chain.landbaseName}
-                  </div>
-                  {chain.landbaseCountry ? (
-                    <div className="text-sm text-slate-600">
-                      {chain.landbaseCountry}
-                    </div>
-                  ) : null}
-                  <div className="mt-1 text-sm text-slate-600">
-                    Purchased by <strong>{chain.fspName}</strong>
-                  </div>
+                    {inputs.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-500 italic">
+                        No origin landbases linked to this chain yet.
+                      </p>
+                    ) : (
+                      <div className="mt-3 space-y-4 divide-y divide-slate-100">
+                        {inputs.map((input, idx) => {
+                          const lb = input.landbase
+                          const oc = input.origin_certificate
+                          const rp = input.raw_purchase
+                          return (
+                            <div
+                              key={`${rp.code}-${idx}`}
+                              className={idx > 0 ? 'pt-4' : ''}
+                            >
+                              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                                <div>
+                                  <div className="text-base font-semibold text-slate-900">
+                                    {lb.name}
+                                  </div>
+                                  {lb.country ? (
+                                    <div className="text-sm text-slate-600">
+                                      {lb.country}
+                                    </div>
+                                  ) : null}
+                                  {input.purchasing_org?.name ? (
+                                    <div className="mt-1 text-sm text-slate-600">
+                                      Purchased by{' '}
+                                      <strong>
+                                        {input.purchasing_org.name}
+                                      </strong>
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <EligibilityBadge
+                                  status={lb.eligibility_status}
+                                />
+                              </div>
 
-                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-xs uppercase text-slate-500">
-                        Originally purchased
-                      </dt>
-                      <dd className="mt-0.5 text-slate-900">
-                        {formatDate(chain.purchaseDate)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase text-slate-500">
-                        Source purchase
-                      </dt>
-                      <dd className="mt-0.5 font-mono text-xs text-slate-900">
-                        {chain.purchaseCode}
-                      </dd>
-                    </div>
-                  </dl>
+                              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+                                <div>
+                                  <dt className="text-xs uppercase text-slate-500">
+                                    Volume attributed
+                                  </dt>
+                                  <dd className="mt-0.5 text-slate-900">
+                                    {input.volume_attributed != null
+                                      ? `${Number(input.volume_attributed).toFixed(2)} ${rp.volume_unit}`
+                                      : '—'}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs uppercase text-slate-500">
+                                    Originally purchased
+                                  </dt>
+                                  <dd className="mt-0.5 text-slate-900">
+                                    {formatDate(rp.purchase_date)}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="text-xs uppercase text-slate-500">
+                                    Source purchase
+                                  </dt>
+                                  <dd className="mt-0.5 font-mono text-xs text-slate-900">
+                                    {rp.code}
+                                  </dd>
+                                </div>
+                              </dl>
 
-                  {chain.ocNumber ? (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      <Link
-                        href={`/certificates/${chain.ocId}`}
-                        className="text-sm font-medium hover:underline"
-                        style={{ color: '#063359' }}
+                              {oc ? (
+                                <div className="mt-3">
+                                  <Link
+                                    href={`/certificates/${oc.id}`}
+                                    className="text-sm font-medium hover:underline"
+                                    style={{ color: '#063359' }}
+                                  >
+                                    View origin certificate{' '}
+                                    {oc.certificate_number} →
+                                  </Link>
+                                </div>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* Steps 2..N: each sale hop */}
+                  {saleChain.map((step, idx) => {
+                    const isFinal = idx === saleChain.length - 1
+                    return (
+                      <section
+                        key={`${sale.id}-${step.sale_code}-${idx}`}
+                        className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
                       >
-                        View origin certificate {chain.ocNumber}{' '}
-                        {chain.ocVoided ? '(VOIDED)' : ''} →
-                      </Link>
-                    </div>
-                  ) : null}
-                </section>
-
-                {chain.steps.map((step, idx) => {
-                  const isFinal = idx === chain.steps.length - 1
-                  return (
-                    <section
-                      key={`${chain.ocId}-${step.saleCode}-${idx}`}
-                      className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Step {idx + 2} · {isFinal ? 'Latest sale' : 'Sale'}
-                      </div>
-                      <div className="mt-1.5 font-mono text-sm text-slate-900">
-                        {step.saleCode}
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
-                        <span>
-                          <span className="text-xs uppercase text-slate-500 mr-1">
-                            Seller
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Step {idx + 2} ·{' '}
+                          {isFinal ? 'Final sale (yours)' : 'Sale'}
+                        </div>
+                        <div className="mt-1.5 font-mono text-sm text-slate-900">
+                          {step.sale_code}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                          <span>
+                            <span className="text-xs uppercase text-slate-500 mr-1">
+                              Seller
+                            </span>
+                            <strong>{step.seller.name}</strong>
                           </span>
-                          <strong>{step.sellerName}</strong>
-                        </span>
-                        <span className="text-slate-400">→</span>
-                        <span>
-                          <span className="text-xs uppercase text-slate-500 mr-1">
-                            Sold to
+                          <span className="text-slate-400">→</span>
+                          <span>
+                            <span className="text-xs uppercase text-slate-500 mr-1">
+                              Sold to
+                            </span>
+                            <strong>{step.buyer.name}</strong>
                           </span>
-                          <strong>{step.buyerName}</strong>
-                        </span>
-                      </div>
-                      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
-                        <div>
-                          <dt className="text-xs uppercase text-slate-500">
-                            Product
-                          </dt>
-                          <dd className="mt-0.5 capitalize text-slate-900">
-                            {step.productName ?? '—'}
-                          </dd>
                         </div>
-                        <div>
-                          <dt className="text-xs uppercase text-slate-500">
-                            Sale date
-                          </dt>
-                          <dd className="mt-0.5 text-slate-900">
-                            {formatDate(step.saleDate)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase text-slate-500">
-                            Volume
-                          </dt>
-                          <dd className="mt-0.5 text-slate-900">
-                            {step.volume} {step.volumeUnit ?? 't'}
-                          </dd>
-                        </div>
-                      </dl>
-                      {step.tcNumber ? (
-                        <div className="mt-3 border-t border-slate-100 pt-3">
-                          <Link
-                            href={`/certificates/${step.tcId}`}
-                            className="text-sm font-medium hover:underline"
-                            style={{ color: '#063359' }}
-                          >
-                            View transaction certificate {step.tcNumber}{' '}
-                            {step.tcVoided ? '(VOIDED)' : ''} →
-                          </Link>
-                        </div>
-                      ) : null}
-                    </section>
-                  )
-                })}
-              </div>
-            </article>
-          ))}
+                        <dl className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+                          <div>
+                            <dt className="text-xs uppercase text-slate-500">
+                              Product
+                            </dt>
+                            <dd className="mt-0.5 capitalize text-slate-900">
+                              {step.product_name ?? '—'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs uppercase text-slate-500">
+                              Sale date
+                            </dt>
+                            <dd className="mt-0.5 text-slate-900">
+                              {formatDate(step.sale_date)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs uppercase text-slate-500">
+                              Volume
+                            </dt>
+                            <dd className="mt-0.5 text-slate-900">
+                              {step.volume} {step.volume_unit ?? 't'}
+                            </dd>
+                          </div>
+                        </dl>
+                        {step.transaction_certificate ? (
+                          <div className="mt-3 border-t border-slate-100 pt-3">
+                            <Link
+                              href={`/certificates/${step.transaction_certificate.id}`}
+                              className="text-sm font-medium hover:underline"
+                              style={{ color: '#063359' }}
+                            >
+                              View transaction certificate{' '}
+                              {step.transaction_certificate.certificate_number}{' '}
+                              →
+                            </Link>
+                          </div>
+                        ) : null}
+                      </section>
+                    )
+                  })}
+                </div>
+              </article>
+            )
+          })}
         </div>
       )}
     </div>
