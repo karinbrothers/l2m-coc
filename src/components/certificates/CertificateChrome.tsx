@@ -82,13 +82,11 @@ export function CertificateChrome({
       className="bg-white text-slate-900 max-w-[860px] mx-auto my-8 p-10 print:max-w-none print:mx-0 print:my-0 print:p-3 print:shadow-none print:text-[10px]"
     >
       {/* Header band: logo (left) + title (centered) on one line.
-          Vertical alignment uses items-end + a small bottom margin
-          on the title so the title baseline lines up with the
-          "LAND TO MARKET" wordmark text — which sits in the lower
-          half of the logo, below the tick. items-center would
-          align the title with the middle of the whole logo
-          (including the tick on top), which reads as too high. */}
-      <div className="flex items-end gap-4 print:gap-2 mb-2 print:mb-1">
+          A tiny mt on the title nudges it down so it visually
+          aligns with the "LAND TO MARKET" wordmark text inside
+          the logo, which sits slightly below the logo's geometric
+          center (the tick adds height above the wordmark). */}
+      <div className="flex items-center gap-4 print:gap-2 mb-2 print:mb-1">
         <div className="shrink-0">
           <Image
             src="/l2m-logo-navy.svg"
@@ -100,7 +98,7 @@ export function CertificateChrome({
           />
         </div>
         <h1
-          className="flex-1 text-center whitespace-nowrap text-lg md:text-xl font-normal tracking-wider print:text-sm mb-2 print:mb-1"
+          className="flex-1 text-center whitespace-nowrap text-lg md:text-xl font-normal tracking-wider print:text-sm mt-[10px] print:mt-[5px]"
           style={{ color: '#063359' }}
         >
           {TITLES[documentType]}
