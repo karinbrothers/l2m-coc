@@ -58,7 +58,9 @@ export default async function CertificateDetailPage({
       ),
       related_purchase:raw_material_purchases!related_purchase_id (
         attested_at,
-        attested_by_email
+        attested_by_email,
+        attested_by_name,
+        attested_by_org_name
       ),
       sale:sales!related_transaction_id (
         code,
@@ -66,8 +68,12 @@ export default async function CertificateDetailPage({
         country_of_dispatch,
         attested_at,
         attested_by_email,
+        attested_by_name,
+        attested_by_org_name,
         acceptance_attested_at,
         acceptance_attested_by_email,
+        acceptance_attested_by_name,
+        acceptance_attested_by_org_name,
         inventory_lot:inventory_lot_id (
           code,
           product_name,

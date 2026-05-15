@@ -3,10 +3,13 @@
 // Stage-aware first-login welcome tour. Self-bootstrapping:
 // drop <WelcomeModal /> into layout.tsx and it handles everything.
 //
-// Stage detection: prefers organizations.supply_chain_stage (the
-// Salesforce-driven source of truth), but falls back to the
-// is_first_stage_processor / is_final_brand booleans when stage
-// is null or unrecognised.
+// Gating: if profiles.full_name is empty, the modal blocks with
+// a "tell us your name" step — no Skip, no dismiss — until the
+// user saves a name. The cert footer reads "Joe Smith, Acme Wool
+// Co." rather than an email, so the name is required by design.
+//
+// After the name step (or if already set), it runs the stage-
+// specific tour: FSP, mid-stream processor, or brand.
 
 'use client'
 
@@ -34,34 +37,58 @@ export default function WelcomeModal() {
   const [stepIdx, setStepIdx] = useState(0)
   const [closing, setClosing] = useState(false)
 
+  // Name-capture state: when true, we render a blocking name
+  // input form INSTEAD of the tour steps. Skip tour is hidden,
+  // dismiss is disabled — has to be saved before anything else.
+  const [needsName, setNeedsName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [tourDone, setTourDone] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('has_completed_onboarding, organization_id')
+        .select('has_completed_onboarding, organization_id, full_name')
         .eq('id', user.id)
         .maybeSingle()
 
-      if (!profile || profile.has_completed_onboarding) return
+      if (!profile) return
+
+      const missingName =
+        !profile.full_name || profile.full_name.trim().length === 0
+      const tourDoneAlready = !!profile.has_completed_onboarding
+
+      // If both are done, nothing to show.
+      if (!missingName && tourDoneAlready) return
 
       const { data: org } = await supabase
         .from('organizations')
-        .select('name, supply_chain_stage, is_first_stage_processor, is_final_brand')
+        .select(
+          'name, supply_chain_stage, is_first_stage_processor, is_final_brand',
+        )
         .eq('id', profile.organization_id)
         .maybeSingle()
 
       if (cancelled) return
       setStage(deriveStage(org))
       setOrgName(org?.name ?? '')
+      setNeedsName(missingName)
+      setTourDone(tourDoneAlready)
       setShow(true)
     }
     run()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   if (!show) return null
@@ -70,11 +97,41 @@ export default function WelcomeModal() {
   const step = steps[stepIdx]
   const isLast = stepIdx === steps.length - 1
 
-  const finish = async () => {
+  const finishTour = async () => {
     setClosing(true)
     const supabase = createClient()
     await supabase.rpc('mark_onboarding_complete')
     setShow(false)
+  }
+
+  const saveName = async () => {
+    const value = nameDraft.trim()
+    if (value.length === 0) {
+      setNameError('Please enter your full name.')
+      return
+    }
+    setSavingName(true)
+    setNameError(null)
+    const supabase = createClient()
+    const { error } = await supabase.rpc('set_profile_full_name', {
+      p_full_name: value,
+    })
+    setSavingName(false)
+    if (error) {
+      setNameError(
+        error.message === 'name_required'
+          ? 'Please enter your full name.'
+          : 'Could not save. Please try again.',
+      )
+      return
+    }
+    setNeedsName(false)
+    // If the tour was already done in a previous session, we can
+    // just close the modal now — they only had to come back for
+    // the name. Otherwise, fall through to the tour.
+    if (tourDone) {
+      setShow(false)
+    }
   }
 
   return (
@@ -85,87 +142,180 @@ export default function WelcomeModal() {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
     >
       <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden">
-        {/* Header / step indicator */}
+        {/* Header */}
         <div className="bg-[#063359] px-6 py-4 flex items-center justify-between">
           <span className="text-white text-sm font-medium tracking-wide">
             Welcome to Land to Market
           </span>
-          <span className="text-white/70 text-xs">
-            Step {stepIdx + 1} of {steps.length}
-          </span>
+          {!needsName ? (
+            <span className="text-white/70 text-xs">
+              Step {stepIdx + 1} of {steps.length}
+            </span>
+          ) : null}
         </div>
 
-        {/* Progress bar */}
-        <div className="h-1 bg-gray-100">
-          <div
-            className="h-1 bg-[#063359] transition-all duration-300"
-            style={{ width: `${((stepIdx + 1) / steps.length) * 100}%` }}
-          />
-        </div>
+        {/* Progress bar (hidden during name capture) */}
+        {!needsName ? (
+          <div className="h-1 bg-gray-100">
+            <div
+              className="h-1 bg-[#063359] transition-all duration-300"
+              style={{ width: `${((stepIdx + 1) / steps.length) * 100}%` }}
+            />
+          </div>
+        ) : null}
 
         {/* Body */}
-        <div className="px-6 py-6 min-h-[200px]">
-          <h2 id="welcome-title" className="text-xl font-semibold text-gray-900 mb-3">
-            {step.title}
-          </h2>
-          <div className="text-gray-700 leading-relaxed text-[15px]">
-            {step.body}
-          </div>
-
-          {step.cta && (
-            <div className="mt-5">
-              <Link
-                href={step.cta.href}
-                onClick={finish}
-                className="inline-flex items-center gap-2 rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition"
-              >
-                {step.cta.label}
-                <span aria-hidden>→</span>
-              </Link>
+        {needsName ? (
+          <NameCaptureBody
+            nameDraft={nameDraft}
+            setNameDraft={setNameDraft}
+            saving={savingName}
+            error={nameError}
+            onSave={saveName}
+          />
+        ) : (
+          <div className="px-6 py-6 min-h-[200px]">
+            <h2
+              id="welcome-title"
+              className="text-xl font-semibold text-gray-900 mb-3"
+            >
+              {step.title}
+            </h2>
+            <div className="text-gray-700 leading-relaxed text-[15px]">
+              {step.body}
             </div>
-          )}
-        </div>
+
+            {step.cta && (
+              <div className="mt-5">
+                <Link
+                  href={step.cta.href}
+                  onClick={finishTour}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition"
+                >
+                  {step.cta.label}
+                  <span aria-hidden>→</span>
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-gray-50 flex items-center justify-between border-t">
-          <button
-            type="button"
-            onClick={() => setStepIdx(Math.max(0, stepIdx - 1))}
-            disabled={stepIdx === 0 || closing}
-            className="text-sm text-gray-500 hover:text-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            ← Back
-          </button>
-
-          <button
-            type="button"
-            onClick={finish}
-            className="text-xs text-gray-400 hover:text-gray-700"
-          >
-            Skip tour
-          </button>
-
-          {!isLast ? (
+        {!needsName ? (
+          <div className="px-6 py-4 bg-gray-50 flex items-center justify-between border-t">
             <button
               type="button"
-              onClick={() => setStepIdx(stepIdx + 1)}
-              disabled={closing}
-              className="rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition disabled:opacity-50"
+              onClick={() => setStepIdx(Math.max(0, stepIdx - 1))}
+              disabled={stepIdx === 0 || closing}
+              className="text-sm text-gray-500 hover:text-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Next →
+              ← Back
             </button>
-          ) : (
+
             <button
               type="button"
-              onClick={finish}
-              disabled={closing}
-              className="rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition disabled:opacity-50"
+              onClick={finishTour}
+              className="text-xs text-gray-400 hover:text-gray-700"
             >
-              {closing ? 'Saving…' : 'Get started'}
+              Skip tour
             </button>
-          )}
-        </div>
+
+            {!isLast ? (
+              <button
+                type="button"
+                onClick={() => setStepIdx(stepIdx + 1)}
+                disabled={closing}
+                className="rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition disabled:opacity-50"
+              >
+                Next →
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={finishTour}
+                disabled={closing}
+                className="rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition disabled:opacity-50"
+              >
+                {closing ? 'Saving…' : 'Get started'}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="px-6 py-4 bg-gray-50 flex items-center justify-end border-t">
+            <button
+              type="button"
+              onClick={saveName}
+              disabled={savingName || nameDraft.trim().length === 0}
+              className="rounded-lg bg-[#063359] px-4 py-2 text-white text-sm font-medium hover:bg-[#0a4a7e] transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {savingName ? 'Saving…' : 'Save & continue'}
+            </button>
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------
+// Name capture body
+// ---------------------------------------------------------------
+
+function NameCaptureBody({
+  nameDraft,
+  setNameDraft,
+  saving,
+  error,
+  onSave,
+}: {
+  nameDraft: string
+  setNameDraft: (v: string) => void
+  saving: boolean
+  error: string | null
+  onSave: () => void
+}) {
+  return (
+    <div className="px-6 py-6 min-h-[200px]">
+      <h2
+        id="welcome-title"
+        className="text-xl font-semibold text-gray-900 mb-3"
+      >
+        First, what should we call you?
+      </h2>
+      <p className="text-gray-700 leading-relaxed text-[15px] mb-4">
+        Your full name appears on every certificate you attest, so chain
+        partners and L2M auditors know exactly who confirmed each step. You
+        can update it later from your profile.
+      </p>
+      <label
+        htmlFor="full_name"
+        className="mb-1 block text-sm font-medium text-slate-700"
+      >
+        Full name <span className="text-red-600">*</span>
+      </label>
+      <input
+        id="full_name"
+        type="text"
+        value={nameDraft}
+        onChange={(e) => setNameDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !saving && nameDraft.trim().length > 0) {
+            onSave()
+          }
+        }}
+        autoFocus
+        disabled={saving}
+        placeholder="e.g. Joe Smith"
+        className="w-full rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-[#063359] focus:outline-none focus:ring-1 focus:ring-[#063359] disabled:opacity-60"
+      />
+      {error ? (
+        <p className="mt-2 text-xs text-red-600">{error}</p>
+      ) : (
+        <p className="mt-2 text-xs text-slate-500">
+          We can&rsquo;t continue without this — it&rsquo;s what makes
+          attestations binding.
+        </p>
+      )}
     </div>
   )
 }

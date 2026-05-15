@@ -100,13 +100,31 @@ export async function createPurchase(formData: FormData) {
     redirect('/purchases/new?error=invalid_year')
   }
 
-  const { data: lb, error: lbErr } = await supabase
-    .from('landbases')
-    .select(
-      'id, name, country, eligibility_status, expiration_date, monitoring_date, verification_date, eligibility_report_url',
-    )
-    .eq('id', landbaseId)
-    .single()
+  // Fetch the user's display name + org name once, so we can
+  // snapshot them on the purchase + OC for the attestation footer.
+  const [{ data: profile }, { data: orgRow }, { data: lb, error: lbErr }] =
+    await Promise.all([
+      supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', user.organization_id)
+        .maybeSingle(),
+      supabase
+        .from('landbases')
+        .select(
+          'id, name, country, eligibility_status, expiration_date, monitoring_date, verification_date, eligibility_report_url',
+        )
+        .eq('id', landbaseId)
+        .single(),
+    ])
+
+  const attestorName = profile?.full_name ?? null
+  const attestorOrgName = orgRow?.name ?? null
 
   if (lbErr || !lb) {
     redirect('/purchases/new?error=landbase_not_found')
@@ -146,6 +164,8 @@ export async function createPurchase(formData: FormData) {
       attested_at: new Date().toISOString(),
       attested_by: user.id,
       attested_by_email: user.email ?? null,
+      attested_by_name: attestorName,
+      attested_by_org_name: attestorOrgName,
     })
     .select('id, code')
     .single()
@@ -171,14 +191,9 @@ export async function createPurchase(formData: FormData) {
   const certificateNumber =
     (certNumberData as string | null) ?? `OC-${newPurchase.code}`
 
-  // Buyer-org name for the OC's Box 2 snapshot
-  const { data: buyerOrg } = await supabase
-    .from('organizations')
-    .select('name')
-    .eq('id', user.organization_id)
-    .maybeSingle()
-
-  // Issue OC
+  // Issue OC. attestorOrgName is the buyer org's name — also used
+  // to populate the OC's Box 2 ("First Stage Processor / Buyer of
+  // Raw Material") snapshot.
   const { error: certErr } = await supabase.from('certificates').insert({
     certificate_number: certificateNumber,
     type: 'origin',
@@ -192,13 +207,14 @@ export async function createPurchase(formData: FormData) {
     verification_date_snapshot: lb.verification_date,
     eligibility_report_url_snapshot: lb.eligibility_report_url,
     purchase_code: newPurchase.code,
+    fibre_diameter_snapshot: fibreDiameter,
     volume,
     volume_unit: 'tonnes',
     commodity_type: 'wool',
     purchase_date: purchaseDate,
     clip_year_snapshot: yearOfClip,
     report_year_used: new Date().getFullYear(),
-    buyer_org_name_snapshot: buyerOrg?.name ?? null,
+    buyer_org_name_snapshot: attestorOrgName,
   })
   if (certErr) {
     console.error('[createPurchase] origin cert creation failed:', certErr.message)

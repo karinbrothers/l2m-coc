@@ -117,10 +117,24 @@ export async function createSale(formData: FormData) {
 
     // Stamp attestation on the sale. Uses a SECURITY DEFINER
     // RPC for the same RLS reason as dispatch info.
+    const [{ data: profile }, { data: sellerOrg }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', user.organization_id)
+        .maybeSingle(),
+    ])
     const { error: attErr } = await supabase.rpc('set_sale_attestation', {
       p_sale_id: createdSale.id,
       p_attested_by: user.id,
       p_attested_by_email: user.email ?? null,
+      p_attested_by_name: profile?.full_name ?? null,
+      p_attested_by_org_name: sellerOrg?.name ?? null,
     })
     if (attErr) {
       console.error('[createSale] set_sale_attestation error:', attErr)

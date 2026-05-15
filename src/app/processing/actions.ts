@@ -165,11 +165,24 @@ export async function createProcessingBatch(formData: FormData) {
   // Stamp attestation on the processing batch we just created.
   // Look it up by inventory_lot.code → inventory_lot_id.
   try {
-    const { data: lot } = await supabase
-      .from('inventory_lots')
-      .select('id')
-      .eq('code', lotCode)
-      .maybeSingle()
+    const [{ data: lot }, { data: profile }, { data: orgRow }] =
+      await Promise.all([
+        supabase
+          .from('inventory_lots')
+          .select('id')
+          .eq('code', lotCode)
+          .maybeSingle(),
+        supabase
+          .from('profiles')
+          .select('full_name, organization_id')
+          .eq('id', user.id)
+          .maybeSingle(),
+        supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', user.organization_id)
+          .maybeSingle(),
+      ])
     if (lot?.id) {
       await supabase
         .from('processing_batches')
@@ -177,6 +190,8 @@ export async function createProcessingBatch(formData: FormData) {
           attested_at: new Date().toISOString(),
           attested_by: user.id,
           attested_by_email: user.email ?? null,
+          attested_by_name: profile?.full_name ?? null,
+          attested_by_org_name: orgRow?.name ?? null,
         })
         .eq('inventory_lot_id', lot.id)
     }

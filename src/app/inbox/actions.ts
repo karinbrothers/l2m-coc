@@ -76,6 +76,24 @@ export async function acceptSale(formData: FormData) {
   const sale = data as SaleRow | null
 
   if (sale) {
+    // Fetch the buyer's display name + org name once; we'll
+    // snapshot them on both the sale (acceptance) and the
+    // received purchase row.
+    const [{ data: profile }, { data: buyerOrgRow }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle(),
+      supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', user.organization_id)
+        .maybeSingle(),
+    ])
+    const attestorName = profile?.full_name ?? null
+    const attestorOrgName = buyerOrgRow?.name ?? null
+
     // Stamp acceptance attestation on the sale via SECURITY DEFINER
     // RPC (direct UPDATE is blocked by RLS).
     const { error: attErr } = await supabase.rpc(
@@ -84,6 +102,8 @@ export async function acceptSale(formData: FormData) {
         p_sale_id: sale.id,
         p_attested_by: user.id,
         p_attested_by_email: user.email ?? null,
+        p_attested_by_name: attestorName,
+        p_attested_by_org_name: attestorOrgName,
       },
     )
     if (attErr) {
@@ -150,6 +170,8 @@ export async function acceptSale(formData: FormData) {
             p_purchase_id: receivedPurchase.id,
             p_attested_by: user.id,
             p_attested_by_email: user.email ?? null,
+            p_attested_by_name: attestorName,
+            p_attested_by_org_name: attestorOrgName,
           },
         )
         if (attRpErr) {

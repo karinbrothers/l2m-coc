@@ -39,6 +39,8 @@ type OriginCertificateData = {
   related_purchase?: {
     attested_at: string | null;
     attested_by_email: string | null;
+    attested_by_name: string | null;
+    attested_by_org_name: string | null;
   } | null;
 };
 
@@ -52,6 +54,17 @@ function formatAttestedTime(iso: string | null) {
     minute: '2-digit',
     timeZoneName: 'short',
   });
+}
+
+function attestorLabel(
+  name: string | null,
+  org: string | null,
+  email: string | null,
+): string {
+  if (name && org) return `${name}, ${org}`;
+  if (name) return name;
+  if (org) return org;
+  return email ?? 'unknown user';
 }
 
 function formatDate(d: string | null) {
@@ -85,6 +98,20 @@ export function OriginCertificate({
     certificate.eligibility_report_url_snapshot ??
     '—';
 
+  const att = certificate.related_purchase;
+  const attestationFooter =
+    att?.attested_at ? (
+      <span>
+        <strong className="text-slate-900">Attested by</strong>{' '}
+        {attestorLabel(
+          att.attested_by_name,
+          att.attested_by_org_name,
+          att.attested_by_email,
+        )}{' '}
+        on {formatAttestedTime(att.attested_at)}.
+      </span>
+    ) : null;
+
   return (
     <>
       <div className="mb-4 flex justify-end print:hidden">
@@ -94,6 +121,7 @@ export function OriginCertificate({
         documentType="origin"
         certificateId={certificate.certificate_number}
         issuedAt={certificate.issued_at}
+        attestationFooter={attestationFooter}
       >
         {/* Row 1: Boxes 1 + 2 */}
         <Box
@@ -204,20 +232,6 @@ export function OriginCertificate({
           <p>{certificate.country_snapshot ?? '—'}</p>
         </Box>
       </CertificateChrome>
-
-      {certificate.related_purchase?.attested_at ||
-      certificate.related_purchase?.attested_by_email ? (
-        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 print:mt-3 print:border-slate-300 print:bg-transparent print:text-[9px]">
-          <strong className="text-slate-900">Attestation:</strong>{' '}
-          Attested by{' '}
-          <span className="font-medium">
-            {certificate.related_purchase.attested_by_email ?? 'unknown user'}
-          </span>{' '}
-          on{' '}
-          <span>{formatAttestedTime(certificate.related_purchase.attested_at)}</span>
-          .
-        </div>
-      ) : null}
     </>
   );
 }

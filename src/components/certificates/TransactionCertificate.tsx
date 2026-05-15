@@ -52,8 +52,12 @@ export type TransactionCertificateData = {
     country_of_dispatch: string | null;
     attested_at: string | null;
     attested_by_email: string | null;
+    attested_by_name: string | null;
+    attested_by_org_name: string | null;
     acceptance_attested_at: string | null;
     acceptance_attested_by_email: string | null;
+    acceptance_attested_by_name: string | null;
+    acceptance_attested_by_org_name: string | null;
     inventory_lot: {
       code: string | null;
       product_name: string | null;
@@ -73,6 +77,17 @@ function formatAttestedTime(iso: string | null) {
     minute: '2-digit',
     timeZoneName: 'short',
   });
+}
+
+function attestorLabel(
+  name: string | null,
+  org: string | null,
+  email: string | null,
+): string {
+  if (name && org) return `${name}, ${org}`;
+  if (name) return name;
+  if (org) return org;
+  return email ?? 'unknown user';
 }
 
 type OrgLite = {
@@ -116,6 +131,29 @@ export function TransactionCertificate({
   const shippingNumber = certificate.sale?.shipping_number ?? null;
   const countryOfDispatch = certificate.sale?.country_of_dispatch ?? null;
 
+  const sale = certificate.sale;
+  const sellerAtt = sale?.attested_at
+    ? `Attested by ${attestorLabel(
+        sale.attested_by_name,
+        sale.attested_by_org_name,
+        sale.attested_by_email,
+      )} on ${formatAttestedTime(sale.attested_at)}.`
+    : null;
+  const buyerAtt = sale?.acceptance_attested_at
+    ? `Receipt attested by ${attestorLabel(
+        sale.acceptance_attested_by_name,
+        sale.acceptance_attested_by_org_name,
+        sale.acceptance_attested_by_email,
+      )} on ${formatAttestedTime(sale.acceptance_attested_at)}.`
+    : null;
+  const attestationFooter =
+    sellerAtt || buyerAtt ? (
+      <div className="space-y-0.5">
+        {sellerAtt ? <div>{sellerAtt}</div> : null}
+        {buyerAtt ? <div>{buyerAtt}</div> : null}
+      </div>
+    ) : null;
+
   return (
     <>
       <div className="mb-4 flex items-center justify-end gap-3 print:hidden">
@@ -135,6 +173,7 @@ export function TransactionCertificate({
         documentType="transaction"
         certificateId={certificate.certificate_number}
         issuedAt={certificate.issued_at}
+        attestationFooter={attestationFooter}
       >
         {/* Row 1: Boxes 1 + 2 */}
         <Box
@@ -303,36 +342,6 @@ export function TransactionCertificate({
           </p>
         </Box>
       </CertificateChrome>
-
-      {certificate.sale?.attested_at ||
-      certificate.sale?.acceptance_attested_at ? (
-        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 print:mt-3 print:border-slate-300 print:bg-transparent print:text-[9px]">
-          <strong className="block text-slate-900 mb-1">Attestations</strong>
-          {certificate.sale?.attested_at ? (
-            <div>
-              <span className="text-slate-500">Seller:</span>{' '}
-              <span className="font-medium">
-                {certificate.sale.attested_by_email ?? 'unknown user'}
-              </span>{' '}
-              on{' '}
-              <span>{formatAttestedTime(certificate.sale.attested_at)}</span>
-            </div>
-          ) : null}
-          {certificate.sale?.acceptance_attested_at ? (
-            <div className="mt-0.5">
-              <span className="text-slate-500">Buyer (on acceptance):</span>{' '}
-              <span className="font-medium">
-                {certificate.sale.acceptance_attested_by_email ??
-                  'unknown user'}
-              </span>{' '}
-              on{' '}
-              <span>
-                {formatAttestedTime(certificate.sale.acceptance_attested_at)}
-              </span>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
     </>
   );
 }

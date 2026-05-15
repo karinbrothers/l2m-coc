@@ -5,6 +5,15 @@
 // round Verified seal — modeled on the official L2M Digital Origin
 // and Transaction Certificate templates.
 //
+// Layout (top to bottom):
+//   1. Header band: L2M logo (left) + title (centered, large)
+//   2. Metadata band: Certificate ID, Issued date, and the
+//      "valid original version" notice.
+//   3. Numbered box grid.
+//   4. Declaration block + signature + seal.
+//   5. Optional attestation footer (renders inside the chrome
+//      border so it travels with the printed/PDF document).
+//
 // Print: aggressive size shrinking via print: variants so the
 // whole document fits on a single A4 / US Letter page.
 
@@ -25,11 +34,11 @@ const DECLARATION_NUMBER: Record<DocumentType, number> = {
 
 const DECLARATION_TEXT: Record<DocumentType, { p1: string; p2: string }> = {
   origin: {
-    p1: 'This is to verify that, based on the documentation provided by the buyer named in Box 2, the product listed in Box 3 and quantified in Box 4 has been produced in accordance with the Land to Market Standard.',
+    p1: 'This is to verify that, based on the documentation provided by the buyer named in Box 2, the product listed in Box 3 and quantified in Box 4 has been produced in accordance with the Land to Market Guidelines.',
     p2: 'This Origin Certificate does not entitle the seller or buyer/consignee of the products to use the Land to Market Seal or make reference to Land to Market. The rules for labelling of Land to Market verified goods is outlined in the Claims Guidelines.',
   },
   transaction: {
-    p1: 'This is to verify that, based on the documentation provided by the seller named in Box 2, the product listed in Box 6 and quantified in Box 7 has been produced in accordance with the Land to Market Standard.',
+    p1: 'This is to verify that, based on the documentation provided by the seller named in Box 2, the product listed in Box 6 and quantified in Box 7 has been produced in accordance with the Land to Market Guidelines.',
     p2: 'This Transaction Certificate does not entitle the seller or buyer/consignee of the products to use the Land to Market Seal or make reference to Land to Market. The rules for labelling of Land to Market verified goods is outlined in the Claims Guidelines.',
   },
 };
@@ -48,6 +57,13 @@ type CertificateChromeProps = {
   certificateId: string | null;
   issuedAt: Date | string | null;
   children: ReactNode;
+  /**
+   * Optional attestation footer — rendered inside the chrome
+   * after the declaration block so it's part of the printed
+   * document. OC and TC components build their own content and
+   * pass it in.
+   */
+  attestationFooter?: ReactNode;
 };
 
 export function CertificateChrome({
@@ -55,6 +71,7 @@ export function CertificateChrome({
   certificateId,
   issuedAt,
   children,
+  attestationFooter,
 }: CertificateChromeProps) {
   const declaration = DECLARATION_TEXT[documentType];
   const declarationNumber = DECLARATION_NUMBER[documentType];
@@ -64,30 +81,54 @@ export function CertificateChrome({
       data-cert-print
       className="bg-white text-slate-900 max-w-[860px] mx-auto my-8 p-10 print:max-w-none print:mx-0 print:my-0 print:p-3 print:shadow-none print:text-[10px]"
     >
-      {/* Top strip: logo + Certificate ID — compact height */}
-      <div className="grid grid-cols-[120px_1fr_1fr] border-t border-l border-slate-900 mb-6 print:mb-3">
-        <div className="border-r border-b border-slate-900 px-3 py-2 print:py-1 flex items-center justify-center">
+      {/* Header band: logo (left) + title (centered) on one line */}
+      <div className="flex items-center gap-6 print:gap-3 mb-2 print:mb-1">
+        <div className="shrink-0">
           <Image
             src="/l2m-logo-navy.svg"
             alt="Land to Market"
-            width={80}
-            height={44}
+            width={90}
+            height={50}
             priority
             className="print:w-[60px] print:h-auto"
           />
         </div>
-        <div className="border-r border-b border-slate-900 px-4 py-2 print:py-1 flex items-center text-sm print:text-[10px]">
-          Digital {documentType === 'origin' ? 'Origin' : 'Transaction'} Certificate ID:
-        </div>
-        <div className="border-r border-b border-slate-900 px-4 py-2 print:py-1 flex items-center font-mono text-sm print:text-[10px]">
-          {certificateId ?? '—'}
-        </div>
+        <h1
+          className="flex-1 text-center text-xl md:text-2xl font-normal tracking-wider print:text-base"
+          style={{ color: '#063359' }}
+        >
+          {TITLES[documentType]}
+        </h1>
+        {/* Phantom spacer matching logo width to keep title visually centered */}
+        <div className="shrink-0 w-[90px] print:w-[60px]" aria-hidden />
       </div>
 
-      {/* Centered title */}
-      <h1 className="text-center text-xl md:text-2xl font-normal tracking-wider mb-5 print:text-base print:mb-3">
-        {TITLES[documentType]}
-      </h1>
+      {/* Thin navy rule under header */}
+      <div
+        className="border-t mb-3 print:mb-2"
+        style={{ borderColor: '#063359' }}
+      />
+
+      {/* Metadata band: Cert ID + Issued + valid-original notice */}
+      <div className="mb-5 print:mb-3 text-sm print:text-[10px] text-slate-800">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <div>
+            <span className="text-slate-600">Certificate ID:</span>{' '}
+            <span className="font-mono font-medium">
+              {certificateId ?? '—'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-600">Issued:</span>{' '}
+            <span className="font-medium">
+              {issuedAt ? formatDate(issuedAt) : '—'}
+            </span>
+          </div>
+        </div>
+        <p className="mt-1 italic text-xs print:text-[9px] text-slate-600">
+          This electronically issued document is the valid original version.
+        </p>
+      </div>
 
       {/* Body grid — single border surface */}
       <div className="grid grid-cols-12 border-t border-l border-slate-900">
@@ -141,6 +182,15 @@ export function CertificateChrome({
               />
             </div>
           </div>
+
+          {/* Attestation footer — inside the chrome border so it
+              prints with the document. Subtle styling so it reads
+              as document metadata, not a numbered box. */}
+          {attestationFooter ? (
+            <div className="border-t border-slate-300 px-4 py-2.5 print:py-1.5 text-xs print:text-[9px] text-slate-700 leading-relaxed bg-slate-50/60">
+              {attestationFooter}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
