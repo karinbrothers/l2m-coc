@@ -176,6 +176,7 @@ export async function createProcessingBatch(formData: FormData) {
         .update({
           attested_at: new Date().toISOString(),
           attested_by: user.id,
+          attested_by_email: user.email ?? null,
         })
         .eq('inventory_lot_id', lot.id)
     }

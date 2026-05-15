@@ -56,10 +56,18 @@ export default async function CertificateDetailPage({
           country_snapshot
         )
       ),
+      related_purchase:raw_material_purchases!related_purchase_id (
+        attested_at,
+        attested_by_email
+      ),
       sale:sales!related_transaction_id (
         code,
         shipping_number,
         country_of_dispatch,
+        attested_at,
+        attested_by_email,
+        acceptance_attested_at,
+        acceptance_attested_by_email,
         inventory_lot:inventory_lot_id (
           code,
           product_name,

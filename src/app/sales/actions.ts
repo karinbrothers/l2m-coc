@@ -120,6 +120,7 @@ export async function createSale(formData: FormData) {
     const { error: attErr } = await supabase.rpc('set_sale_attestation', {
       p_sale_id: createdSale.id,
       p_attested_by: user.id,
+      p_attested_by_email: user.email ?? null,
     })
     if (attErr) {
       console.error('[createSale] set_sale_attestation error:', attErr)

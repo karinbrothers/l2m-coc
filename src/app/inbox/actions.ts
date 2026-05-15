@@ -83,6 +83,7 @@ export async function acceptSale(formData: FormData) {
       {
         p_sale_id: sale.id,
         p_attested_by: user.id,
+        p_attested_by_email: user.email ?? null,
       },
     )
     if (attErr) {
@@ -148,6 +149,7 @@ export async function acceptSale(formData: FormData) {
           {
             p_purchase_id: receivedPurchase.id,
             p_attested_by: user.id,
+            p_attested_by_email: user.email ?? null,
           },
         )
         if (attRpErr) {

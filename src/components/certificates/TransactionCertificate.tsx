@@ -50,6 +50,10 @@ export type TransactionCertificateData = {
     code: string | null;
     shipping_number: string | null;
     country_of_dispatch: string | null;
+    attested_at: string | null;
+    attested_by_email: string | null;
+    acceptance_attested_at: string | null;
+    acceptance_attested_by_email: string | null;
     inventory_lot: {
       code: string | null;
       product_name: string | null;
@@ -58,6 +62,18 @@ export type TransactionCertificateData = {
     } | null;
   } | null;
 };
+
+function formatAttestedTime(iso: string | null) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
 
 type OrgLite = {
   name: string | null;
@@ -287,6 +303,36 @@ export function TransactionCertificate({
           </p>
         </Box>
       </CertificateChrome>
+
+      {certificate.sale?.attested_at ||
+      certificate.sale?.acceptance_attested_at ? (
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 print:mt-3 print:border-slate-300 print:bg-transparent print:text-[9px]">
+          <strong className="block text-slate-900 mb-1">Attestations</strong>
+          {certificate.sale?.attested_at ? (
+            <div>
+              <span className="text-slate-500">Seller:</span>{' '}
+              <span className="font-medium">
+                {certificate.sale.attested_by_email ?? 'unknown user'}
+              </span>{' '}
+              on{' '}
+              <span>{formatAttestedTime(certificate.sale.attested_at)}</span>
+            </div>
+          ) : null}
+          {certificate.sale?.acceptance_attested_at ? (
+            <div className="mt-0.5">
+              <span className="text-slate-500">Buyer (on acceptance):</span>{' '}
+              <span className="font-medium">
+                {certificate.sale.acceptance_attested_by_email ??
+                  'unknown user'}
+              </span>{' '}
+              on{' '}
+              <span>
+                {formatAttestedTime(certificate.sale.acceptance_attested_at)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }

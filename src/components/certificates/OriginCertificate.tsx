@@ -36,7 +36,23 @@ type OriginCertificateData = {
   fibre_diameter_snapshot?: number | null;
   eligibility_report_id_snapshot?: string | null;
   buyer_org_name_snapshot?: string | null;
+  related_purchase?: {
+    attested_at: string | null;
+    attested_by_email: string | null;
+  } | null;
 };
+
+function formatAttestedTime(iso: string | null) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
 
 function formatDate(d: string | null) {
   if (!d) return '—';
@@ -188,6 +204,20 @@ export function OriginCertificate({
           <p>{certificate.country_snapshot ?? '—'}</p>
         </Box>
       </CertificateChrome>
+
+      {certificate.related_purchase?.attested_at ||
+      certificate.related_purchase?.attested_by_email ? (
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 print:mt-3 print:border-slate-300 print:bg-transparent print:text-[9px]">
+          <strong className="text-slate-900">Attestation:</strong>{' '}
+          Attested by{' '}
+          <span className="font-medium">
+            {certificate.related_purchase.attested_by_email ?? 'unknown user'}
+          </span>{' '}
+          on{' '}
+          <span>{formatAttestedTime(certificate.related_purchase.attested_at)}</span>
+          .
+        </div>
+      ) : null}
     </>
   );
 }

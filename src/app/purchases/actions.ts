@@ -145,6 +145,7 @@ export async function createPurchase(formData: FormData) {
       purchase_date: purchaseDate,
       attested_at: new Date().toISOString(),
       attested_by: user.id,
+      attested_by_email: user.email ?? null,
     })
     .select('id, code')
     .single()
