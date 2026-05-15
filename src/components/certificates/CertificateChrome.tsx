@@ -82,25 +82,25 @@ export function CertificateChrome({
       className="bg-white text-slate-900 max-w-[860px] mx-auto my-8 p-10 print:max-w-none print:mx-0 print:my-0 print:p-3 print:shadow-none print:text-[10px]"
     >
       {/* Header band: logo (left) + title (centered) on one line */}
-      <div className="flex items-center gap-6 print:gap-3 mb-2 print:mb-1">
+      <div className="flex items-center gap-4 print:gap-2 mb-2 print:mb-1">
         <div className="shrink-0">
           <Image
             src="/l2m-logo-navy.svg"
             alt="Land to Market"
-            width={90}
-            height={50}
+            width={130}
+            height={72}
             priority
-            className="print:w-[60px] print:h-auto"
+            className="print:w-[80px] print:h-auto"
           />
         </div>
         <h1
-          className="flex-1 text-center text-xl md:text-2xl font-normal tracking-wider print:text-base"
+          className="flex-1 text-center whitespace-nowrap text-lg md:text-xl font-normal tracking-wider print:text-sm"
           style={{ color: '#063359' }}
         >
           {TITLES[documentType]}
         </h1>
         {/* Phantom spacer matching logo width to keep title visually centered */}
-        <div className="shrink-0 w-[90px] print:w-[60px]" aria-hidden />
+        <div className="shrink-0 w-[130px] print:w-[80px]" aria-hidden />
       </div>
 
       {/* Thin navy rule under header */}
