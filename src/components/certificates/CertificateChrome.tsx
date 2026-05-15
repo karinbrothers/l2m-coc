@@ -81,7 +81,14 @@ export function CertificateChrome({
       data-cert-print
       className="bg-white text-slate-900 max-w-[860px] mx-auto my-8 p-10 print:max-w-none print:mx-0 print:my-0 print:p-3 print:shadow-none print:text-[10px]"
     >
-      {/* Header band: logo (left) + title (centered) on one line */}
+      {/* Header band: logo (left) + title (centered) on one line.
+          The phantom spacer on the right is narrower than the full
+          logo width — it matches roughly the WORDMARK portion of
+          the logo, ignoring the tick on the far left. This shifts
+          the title slightly right so its optical center lines up
+          with the "LAND TO MARKET" wordmark, not the full logo
+          (which would otherwise look off because the tick adds
+          left-weight). */}
       <div className="flex items-center gap-4 print:gap-2 mb-2 print:mb-1">
         <div className="shrink-0">
           <Image
@@ -99,8 +106,8 @@ export function CertificateChrome({
         >
           {TITLES[documentType]}
         </h1>
-        {/* Phantom spacer matching logo width to keep title visually centered */}
-        <div className="shrink-0 w-[130px] print:w-[80px]" aria-hidden />
+        {/* Phantom spacer ≈ wordmark width only (not full logo) */}
+        <div className="shrink-0 w-[95px] print:w-[58px]" aria-hidden />
       </div>
 
       {/* Thin navy rule under header */}
