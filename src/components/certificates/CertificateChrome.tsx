@@ -98,7 +98,7 @@ export function CertificateChrome({
           />
         </div>
         <h1
-          className="flex-1 text-center whitespace-nowrap text-lg md:text-xl font-normal tracking-wider print:text-sm translate-y-[14px] print:translate-y-[7px]"
+          className="flex-1 text-center whitespace-nowrap text-lg md:text-xl font-normal tracking-wider print:text-sm translate-y-[20px] print:translate-y-[10px]"
           style={{ color: '#063359' }}
         >
           {TITLES[documentType]}
