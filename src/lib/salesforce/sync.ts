@@ -465,6 +465,12 @@ export async function syncSalesforceLandbases(organizationId: string) {
   return {
     totalFromSalesforce: landbasesResult.total,
     upserted: landbasesResult.upserted,
+    // Back-compat aliases for existing callers that referenced the
+    // old separated insert/update counts. Bulk upsert doesn't
+    // distinguish between insert and update, so we surface the
+    // total under both names.
+    inserted: 0,
+    updated: landbasesResult.upserted,
     errors: allErrors,
     orgs: orgsResult,
     supplyGroups: supplyGroupsResult,
