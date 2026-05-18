@@ -210,16 +210,30 @@ async function syncOrganizationsPass(
     };
   });
 
-  // Diagnostic: log the first row's payload + key counts so we
-  // can see exactly what we're sending to Supabase.
+  // Diagnostic: log each field of the first row separately so
+  // Vercel's log UI doesn't truncate a long single line. We want
+  // to see exactly what is_first_stage_processor is set to.
   if (rows.length > 0) {
+    const r0 = rows[0] as Record<string, unknown>;
+    console.log('[sync] [orgs] DEBUG name:', r0.name);
+    console.log('[sync] [orgs] DEBUG salesforce_id:', r0.salesforce_id);
+    console.log('[sync] [orgs] DEBUG type:', r0.type);
+    console.log('[sync] [orgs] DEBUG supply_chain_stage:', r0.supply_chain_stage);
     console.log(
-      '[sync] [orgs] First row payload:',
-      JSON.stringify(rows[0]),
+      '[sync] [orgs] DEBUG is_first_stage_processor value:',
+      r0.is_first_stage_processor,
+      'typeof:',
+      typeof r0.is_first_stage_processor,
     );
     console.log(
-      '[sync] [orgs] Keys in payload:',
-      Object.keys(rows[0]).join(', '),
+      '[sync] [orgs] DEBUG is_final_brand value:',
+      r0.is_final_brand,
+      'typeof:',
+      typeof r0.is_final_brand,
+    );
+    console.log(
+      '[sync] [orgs] DEBUG keys:',
+      Object.keys(r0).join(', '),
     );
   }
 
