@@ -12,6 +12,15 @@ type LandbaseRow = {
   eligibility_report_url: string | null
 }
 
+function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
 export default async function LandbasesPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -40,6 +49,7 @@ export default async function LandbasesPage() {
                 <th className="px-6 py-2 font-medium">Name</th>
                 <th className="px-6 py-2 font-medium">Country</th>
                 <th className="px-6 py-2 font-medium">Status</th>
+                <th className="px-6 py-2 font-medium">Verified</th>
                 <th className="px-6 py-2 font-medium">Expires</th>
                 <th className="px-6 py-2 font-medium"></th>
               </tr>
@@ -50,7 +60,8 @@ export default async function LandbasesPage() {
                   <td className="px-6 py-3 text-slate-900">{lb.name}</td>
                   <td className="px-6 py-3 text-slate-700">{lb.country ?? '—'}</td>
                   <td className="px-6 py-3"><StatusBadge status={lb.eligibility_status} /></td>
-                  <td className="px-6 py-3 text-slate-500">{lb.expiration_date ? new Date(lb.expiration_date).toLocaleDateString() : '—'}</td>
+                  <td className="px-6 py-3 text-slate-500">{formatDate(lb.verification_date)}</td>
+                  <td className="px-6 py-3 text-slate-500">{formatDate(lb.expiration_date)}</td>
                   <td className="px-6 py-3 text-right"><ReportLink url={lb.eligibility_report_url} /></td>
                 </tr>
               ))}
