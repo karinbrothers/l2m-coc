@@ -188,10 +188,11 @@ async function syncOrganizationsPass(
   console.log('[sync] [orgs] Got', accounts.length, 'records');
 
   const rows = accounts.map((a) => {
-    // Derive the boolean stage flags from the textual stage so
-    // the orgs table's NOT NULL columns get populated on INSERT
-    // (upsert tries INSERT first; if that fails, no UPDATE
-    // happens either).
+    // Derive the boolean stage flags from the textual stage. The
+    // organizations table previously had a BEFORE INSERT/UPDATE
+    // trigger that did this server-side, but it was buggy (set
+    // both to NULL) and has been dropped in migration 61. We now
+    // own these values from JS.
     const stage = (a.Supply_Chain_Stage__c ?? '').toLowerCase().trim();
     const isFsp =
       stage === 'first_stage_processor' || stage === 'first stage processor';
@@ -209,61 +210,6 @@ async function syncOrganizationsPass(
       is_final_brand: isFinalBrand,
     };
   });
-
-  // Diagnostic: log each field of the first row separately so
-  // Vercel's log UI doesn't truncate a long single line. We want
-  // to see exactly what is_first_stage_processor is set to.
-  if (rows.length > 0) {
-    const r0 = rows[0] as Record<string, unknown>;
-    console.log('[sync] [orgs] DEBUG name:', r0.name);
-    console.log('[sync] [orgs] DEBUG salesforce_id:', r0.salesforce_id);
-    console.log('[sync] [orgs] DEBUG type:', r0.type);
-    console.log('[sync] [orgs] DEBUG supply_chain_stage:', r0.supply_chain_stage);
-    console.log(
-      '[sync] [orgs] DEBUG is_first_stage_processor value:',
-      r0.is_first_stage_processor,
-      'typeof:',
-      typeof r0.is_first_stage_processor,
-    );
-    console.log(
-      '[sync] [orgs] DEBUG is_final_brand value:',
-      r0.is_final_brand,
-      'typeof:',
-      typeof r0.is_final_brand,
-    );
-    console.log(
-      '[sync] [orgs] DEBUG keys:',
-      Object.keys(r0).join(', '),
-    );
-
-    // Scan ALL rows for any with null/undefined boolean fields.
-    // If even one slips through, the chunk insert fails with the
-    // null-value error.
-    const badFsp = rows.filter(
-      (r) =>
-        (r as Record<string, unknown>).is_first_stage_processor === null ||
-        (r as Record<string, unknown>).is_first_stage_processor === undefined,
-    );
-    const badBrand = rows.filter(
-      (r) =>
-        (r as Record<string, unknown>).is_final_brand === null ||
-        (r as Record<string, unknown>).is_final_brand === undefined,
-    );
-    console.log(
-      '[sync] [orgs] DEBUG bad rows — null/undefined is_first_stage_processor:',
-      badFsp.length,
-    );
-    console.log(
-      '[sync] [orgs] DEBUG bad rows — null/undefined is_final_brand:',
-      badBrand.length,
-    );
-    if (badFsp.length > 0) {
-      console.log(
-        '[sync] [orgs] DEBUG sample bad FSP row:',
-        JSON.stringify(badFsp[0]),
-      );
-    }
-  }
 
   const { upserted, errors } = await chunkedUpsert(
     supabase,
@@ -291,9 +237,9 @@ async function syncLandbasesPass(
   const records = await runSOQLAll<SalesforceLandbase>(instanceUrl, accessToken, soql);
   console.log('[sync] [landbases] Got', records.length, 'records');
 
-  // Diagnostic: tally what Salesforce is sending back so we can
-  // see at a glance whether the raw data has the variety we
-  // expect (eligible, ineligible, pending, etc.).
+  // Tally raw values and mapped statuses — kept as a permanent
+  // diagnostic since it's tiny and very useful when partners
+  // report "I see X but it should be Y".
   const rawValueCounts = new Map<string, number>();
   for (const r of records) {
     const key = r.L2M_Landbase_Eligibility__c ?? '(null)';
@@ -316,7 +262,6 @@ async function syncLandbasesPass(
     longitude: r.Longitude__c ?? null,
   }));
 
-  // Diagnostic: how many of each mapped status will we write?
   const mappedCounts = new Map<string, number>();
   for (const r of rows) {
     mappedCounts.set(
