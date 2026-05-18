@@ -118,6 +118,22 @@ async function fetchExistingIds(
   return map;
 }
 
+// Map Salesforce eligibility values to our internal status enum.
+// CRITICAL: "Ineligible" contains the substring "eligible", so we
+// must check for it FIRST — otherwise an Ineligible landbase
+// silently gets stored as eligible. Default to 'ineligible' for
+// unknown values so we err on the side of excluding rather than
+// over-including landbases that aren't really verified.
+function mapEligibility(raw: string | null): string {
+  const elig = String(raw ?? '').toLowerCase().trim();
+  if (elig.includes('ineligible')) return 'ineligible';
+  if (elig.includes('not eligible')) return 'ineligible';
+  if (elig.includes('eligible')) return 'eligible';
+  if (elig.includes('expired')) return 'expired';
+  if (elig.includes('suspend')) return 'suspended';
+  return 'ineligible';
+}
+
 // ============================================================================
 // Pass 1: Salesforce Account → organizations
 // ============================================================================
@@ -201,22 +217,15 @@ async function syncLandbasesPass(
   const records = await runSOQLAll<SalesforceLandbase>(instanceUrl, accessToken, soql);
   console.log('[sync] [landbases] Got', records.length, 'records');
 
-  const rows = records.map((r) => {
-    const elig = String(r.L2M_Landbase_Eligibility__c ?? '').toLowerCase();
-    const eligibility =
-      elig.includes('eligible') ? 'eligible' :
-      elig.includes('expired') ? 'expired' :
-      elig.includes('suspend') ? 'suspended' : 'eligible';
-    return {
-      name: r.Name,
-      salesforce_id: r.Id,
-      country: r.Country__c ?? null,
-      eligibility_status: eligibility,
-      eligibility_report_url: r.L2M_Landbase_Eligibility_Report_URL__c ?? null,
-      expiration_date: r.L2M_Report_Expiration_Date__c ?? null,
-      verification_date: r.Latest_Verification_Effective_Date__c ?? null,
-    };
-  });
+  const rows = records.map((r) => ({
+    name: r.Name,
+    salesforce_id: r.Id,
+    country: r.Country__c ?? null,
+    eligibility_status: mapEligibility(r.L2M_Landbase_Eligibility__c),
+    eligibility_report_url: r.L2M_Landbase_Eligibility_Report_URL__c ?? null,
+    expiration_date: r.L2M_Report_Expiration_Date__c ?? null,
+    verification_date: r.Latest_Verification_Effective_Date__c ?? null,
+  }));
 
   const sfIds = rows.map((r) => r.salesforce_id);
   const existingMap = await fetchExistingIds(supabase, 'landbases', sfIds);

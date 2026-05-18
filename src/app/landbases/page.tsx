@@ -83,9 +83,12 @@ function ReportLink({ url }: { url: string | null }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const label = status.charAt(0).toUpperCase() + status.slice(1)
   const tone =
     status === 'eligible' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-    status === 'expired' ? 'bg-red-50 text-red-800 border-red-200' :
+    status === 'ineligible' ? 'bg-red-50 text-red-800 border-red-200' :
+    status === 'expired' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+    status === 'suspended' ? 'bg-amber-50 text-amber-800 border-amber-200' :
     'bg-slate-50 text-slate-700 border-slate-200'
-  return <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${tone}`}>{status}</span>
+  return <span className={`inline-flex rounded border px-2 py-0.5 text-xs font-medium ${tone}`}>{label}</span>
 }
