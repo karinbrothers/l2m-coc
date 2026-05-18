@@ -145,6 +145,14 @@ export default function LandbasesView({ landbases }: { landbases: Landbase[] }) 
                 const hasCoords =
                   typeof lb.latitude === 'number' &&
                   typeof lb.longitude === 'number'
+                // For ineligible landbases, don't show stale
+                // verification dates or the old eligibility report
+                // — those refer to a previous (no-longer-valid)
+                // verification window and reading them as current
+                // is misleading. Once verification history lands
+                // we can show them under a "History" section
+                // instead.
+                const isIneligible = lb.eligibility_status === 'ineligible'
                 return (
                   <tr
                     key={lb.id}
@@ -175,16 +183,20 @@ export default function LandbasesView({ landbases }: { landbases: Landbase[] }) 
                       <StatusBadge status={lb.eligibility_status} />
                     </td>
                     <td className="px-6 py-3 text-slate-500">
-                      {formatDate(lb.verification_date)}
+                      {isIneligible ? '—' : formatDate(lb.verification_date)}
                     </td>
                     <td className="px-6 py-3 text-slate-500">
-                      {formatDate(lb.expiration_date)}
+                      {isIneligible ? '—' : formatDate(lb.expiration_date)}
                     </td>
                     <td
                       className="px-6 py-3 text-right"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <ReportLink url={lb.eligibility_report_url} />
+                      {isIneligible ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <ReportLink url={lb.eligibility_report_url} />
+                      )}
                     </td>
                   </tr>
                 )

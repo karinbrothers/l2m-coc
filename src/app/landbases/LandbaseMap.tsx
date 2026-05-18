@@ -242,7 +242,7 @@ export default function LandbaseMap({
       <div className="flex flex-wrap gap-4 text-xs text-slate-600">
         <LegendDot color={STATUS_COLOR.eligible} label="Eligible" />
         <LegendDot color={STATUS_COLOR.ineligible} label="Ineligible" />
-        <LegendDot color={STATUS_COLOR.pending} label="Pending / Expired / Suspended" />
+        <LegendDot color={STATUS_COLOR.pending} label="Pending" />
       </div>
     </div>
   )
