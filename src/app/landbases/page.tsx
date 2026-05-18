@@ -24,18 +24,43 @@ function formatDate(iso: string | null): string {
   })
 }
 
+// Supabase's REST API caps a single query at 1000 rows by
+// default. We have well over that, so paginate explicitly via
+// .range() until we run out. Fine for our scale (<10k rows);
+// if we ever get to 100k+ landbases we should revisit.
+async function fetchAllLandbases(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<LandbaseRow[]> {
+  const pageSize = 1000
+  const all: LandbaseRow[] = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('landbases')
+      .select(
+        'id, name, country, eligibility_status, monitoring_date, verification_date, expiration_date, eligibility_report_url, latitude, longitude',
+      )
+      .order('name', { ascending: true })
+      .range(from, from + pageSize - 1)
+      .returns<LandbaseRow[]>()
+    if (error) {
+      console.error('[landbases page] fetch error:', error.message)
+      break
+    }
+    const chunk = data ?? []
+    all.push(...chunk)
+    if (chunk.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
 export default async function LandbasesPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) { redirect('/login') }
 
-  const { data: landbases } = await supabase
-    .from('landbases')
-    .select('id, name, country, eligibility_status, monitoring_date, verification_date, expiration_date, eligibility_report_url, latitude, longitude')
-    .order('name', { ascending: true })
-    .returns<LandbaseRow[]>()
-
-  const all = landbases ?? []
+  const all = await fetchAllLandbases(supabase)
 
   // Map needs only landbases with coordinates. Anything without
   // lat/long in Salesforce is skipped on the map but still
