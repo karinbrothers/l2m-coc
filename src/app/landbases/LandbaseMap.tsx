@@ -1,14 +1,13 @@
-// src/app/landbases/map/LandbaseMap.tsx
+// src/app/landbases/LandbaseMap.tsx
 //
 // Client-side Mapbox component. Plots one marker per landbase,
-// colored by eligibility status. Click a marker for a popup with
-// name, country, current verification window, and a link to the
-// landbase detail page.
+// colored by eligibility status. The map is initialised ONCE; when
+// `pins` changes (e.g. filter applied), markers are swapped out
+// and the map re-fits. When `selectedId` changes (e.g. user clicks
+// a row in the table), the map flies to that pin and opens its
+// popup.
 //
-// Requires NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to be set in Vercel
-// env vars. The token is a *public* Mapbox token — safe to ship
-// to the browser; Mapbox enforces rate limits and (optionally)
-// URL restrictions on their side.
+// Requires NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to be set.
 
 'use client'
 
@@ -28,10 +27,11 @@ export type LandbasePin = {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  eligible: '#059669', // emerald-600
-  ineligible: '#dc2626', // red-600
-  expired: '#d97706', // amber-600
-  suspended: '#d97706', // amber-600
+  eligible: '#059669',
+  ineligible: '#dc2626',
+  pending: '#d97706',
+  expired: '#d97706',
+  suspended: '#d97706',
 }
 
 function formatDate(iso: string | null): string {
@@ -47,10 +47,35 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-export default function LandbaseMap({ pins }: { pins: LandbasePin[] }) {
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+type MarkerEntry = {
+  marker: mapboxgl.Marker
+  popup: mapboxgl.Popup
+}
+
+export default function LandbaseMap({
+  pins,
+  selectedId,
+}: {
+  pins: LandbasePin[]
+  selectedId?: string | null
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
+  const markersRef = useRef<Map<string, MarkerEntry>>(new Map())
+  const mapLoadedRef = useRef(false)
 
+  // ---------------------------------------------------------------
+  // Effect 1: initialise the map exactly once
+  // ---------------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
@@ -66,7 +91,7 @@ export default function LandbaseMap({ pins }: { pins: LandbasePin[] }) {
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: 'mapbox://styles/mapbox/light-v11',
-      center: [0, 20], // default world view; we'll fit to markers below
+      center: [0, 20],
       zoom: 1.5,
     })
     mapRef.current = map
@@ -74,10 +99,7 @@ export default function LandbaseMap({ pins }: { pins: LandbasePin[] }) {
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
     map.addControl(new mapboxgl.FullscreenControl(), 'top-right')
 
-    // Style switcher: light ↔ satellite. Implemented as a custom
-    // control button in the top-right so users can flip to a
-    // satellite view of the actual land — great for regenerative
-    // landbases.
+    // Custom satellite/light toggle
     const styleSwitcher = document.createElement('div')
     styleSwitcher.className = 'mapboxgl-ctrl mapboxgl-ctrl-group'
     const btn = document.createElement('button')
@@ -97,16 +119,47 @@ export default function LandbaseMap({ pins }: { pins: LandbasePin[] }) {
       btn.textContent = isSatellite ? 'Light' : 'Satellite'
     }
     styleSwitcher.appendChild(btn)
-    map.addControl({ onAdd: () => styleSwitcher, onRemove: () => {} }, 'top-right')
+    map.addControl(
+      {
+        onAdd: () => styleSwitcher,
+        onRemove: () => {
+          styleSwitcher.remove()
+        },
+      },
+      'top-right',
+    )
 
     map.on('load', () => {
+      mapLoadedRef.current = true
+    })
+
+    return () => {
+      map.remove()
+      mapRef.current = null
+      mapLoadedRef.current = false
+      markersRef.current.clear()
+    }
+  }, [])
+
+  // ---------------------------------------------------------------
+  // Effect 2: rebuild markers whenever `pins` changes
+  // ---------------------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const applyMarkers = () => {
+      // Clear out the previous set
+      markersRef.current.forEach(({ marker }) => marker.remove())
+      markersRef.current.clear()
+
       if (pins.length === 0) return
 
       const bounds = new mapboxgl.LngLatBounds()
 
       pins.forEach((pin) => {
         const status = pin.eligibility_status.toLowerCase()
-        const color = STATUS_COLOR[status] ?? '#64748b' // slate-500 fallback
+        const color = STATUS_COLOR[status] ?? '#64748b'
 
         const el = document.createElement('div')
         el.style.width = '18px'
@@ -134,42 +187,62 @@ export default function LandbaseMap({ pins }: { pins: LandbasePin[] }) {
           </div>
         `
 
-        const popup = new mapboxgl.Popup({ offset: 14, closeButton: true })
-          .setHTML(popupHtml)
+        const popup = new mapboxgl.Popup({ offset: 14, closeButton: true }).setHTML(popupHtml)
 
-        new mapboxgl.Marker({ element: el })
+        const marker = new mapboxgl.Marker({ element: el })
           .setLngLat([pin.longitude, pin.latitude])
           .setPopup(popup)
           .addTo(map)
 
+        markersRef.current.set(pin.id, { marker, popup })
         bounds.extend([pin.longitude, pin.latitude])
       })
 
-      // Fit map to show all markers, with a comfortable padding
-      // and a maxZoom so a single landbase doesn't zoom you down
-      // to street level.
       if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, { padding: 60, maxZoom: 8, duration: 0 })
+        map.fitBounds(bounds, { padding: 60, maxZoom: 8, duration: 500 })
       }
-    })
+    }
 
-    return () => {
-      map.remove()
-      mapRef.current = null
+    if (mapLoadedRef.current) {
+      applyMarkers()
+    } else {
+      map.once('load', applyMarkers)
     }
   }, [pins])
+
+  // ---------------------------------------------------------------
+  // Effect 3: fly to selectedId when it changes
+  // ---------------------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !selectedId) return
+    const entry = markersRef.current.get(selectedId)
+    if (!entry) return
+    const lngLat = entry.marker.getLngLat()
+    map.flyTo({
+      center: [lngLat.lng, lngLat.lat],
+      zoom: 9,
+      duration: 1200,
+      essential: true,
+    })
+    // Open popup once the fly animation settles. addTo is a no-op
+    // if the popup is already open.
+    setTimeout(() => {
+      if (mapRef.current) entry.popup.addTo(mapRef.current)
+    }, 1250)
+  }, [selectedId])
 
   return (
     <div className="space-y-3">
       <div
         ref={containerRef}
-        className="h-[600px] w-full rounded-lg border border-slate-200 shadow-sm"
-        style={{ minHeight: '600px' }}
+        className="h-[500px] w-full rounded-lg border border-slate-200 shadow-sm"
+        style={{ minHeight: '500px' }}
       />
       <div className="flex flex-wrap gap-4 text-xs text-slate-600">
         <LegendDot color={STATUS_COLOR.eligible} label="Eligible" />
         <LegendDot color={STATUS_COLOR.ineligible} label="Ineligible" />
-        <LegendDot color={STATUS_COLOR.expired} label="Expired / Suspended" />
+        <LegendDot color={STATUS_COLOR.pending} label="Pending / Expired / Suspended" />
       </div>
     </div>
   )
@@ -180,20 +253,13 @@ function LegendDot({ color, label }: { color: string; label: string }) {
     <span className="inline-flex items-center gap-1.5">
       <span
         className="inline-block h-3 w-3 rounded-full"
-        style={{ background: color, border: '2px solid #fff', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }}
+        style={{
+          background: color,
+          border: '2px solid #fff',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+        }}
       />
       {label}
     </span>
   )
-}
-
-// Tiny html-escape for popup content (defends against odd
-// characters in landbase names).
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }

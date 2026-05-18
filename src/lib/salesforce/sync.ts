@@ -219,6 +219,20 @@ async function syncLandbasesPass(
   const records = await runSOQLAll<SalesforceLandbase>(instanceUrl, accessToken, soql);
   console.log('[sync] [landbases] Got', records.length, 'records');
 
+  // Diagnostic: tally what Salesforce is actually sending back
+  // for L2M_Landbase_Eligibility__c. If everything in our DB ends
+  // up "eligible", this log tells us whether the bug is on our
+  // side (mapping) or upstream (Salesforce returning blanks).
+  const rawValueCounts = new Map<string, number>();
+  for (const r of records) {
+    const key = r.L2M_Landbase_Eligibility__c ?? '(null)';
+    rawValueCounts.set(key, (rawValueCounts.get(key) ?? 0) + 1);
+  }
+  console.log(
+    '[sync] [landbases] Raw eligibility values from Salesforce:',
+    Object.fromEntries(rawValueCounts.entries()),
+  );
+
   const rows = records.map((r) => ({
     name: r.Name,
     salesforce_id: r.Id,
