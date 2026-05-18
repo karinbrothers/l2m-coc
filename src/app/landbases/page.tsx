@@ -1,6 +1,6 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import LandbaseMap, { type LandbasePin } from './LandbaseMap'
 
 type LandbaseRow = {
   id: string
@@ -11,6 +11,8 @@ type LandbaseRow = {
   verification_date: string | null
   expiration_date: string | null
   eligibility_report_url: string | null
+  latitude: number | null
+  longitude: number | null
 }
 
 function formatDate(iso: string | null): string {
@@ -29,27 +31,57 @@ export default async function LandbasesPage() {
 
   const { data: landbases } = await supabase
     .from('landbases')
-    .select('id, name, country, eligibility_status, monitoring_date, verification_date, expiration_date, eligibility_report_url')
+    .select('id, name, country, eligibility_status, monitoring_date, verification_date, expiration_date, eligibility_report_url, latitude, longitude')
     .order('name', { ascending: true })
     .returns<LandbaseRow[]>()
 
+  const all = landbases ?? []
+
+  // Map needs only landbases with coordinates. Anything without
+  // lat/long in Salesforce is skipped on the map but still
+  // listed in the table below.
+  const pins: LandbasePin[] = all
+    .filter(
+      (lb): lb is LandbaseRow & { latitude: number; longitude: number } =>
+        typeof lb.latitude === 'number' && typeof lb.longitude === 'number',
+    )
+    .map((lb) => ({
+      id: lb.id,
+      name: lb.name,
+      country: lb.country,
+      eligibility_status: lb.eligibility_status,
+      verification_date: lb.verification_date,
+      expiration_date: lb.expiration_date,
+      latitude: lb.latitude,
+      longitude: lb.longitude,
+    }))
+
+  const missingCoords = all.length - pins.length
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">Landbases</h2>
-          <p className="mt-1 text-sm text-slate-600">All landbases visible to your organization, scoped by Row-Level Security.</p>
-        </div>
-        <Link
-          href="/landbases/map"
-          className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          View on map →
-        </Link>
+      <div>
+        <h2 className="text-2xl font-semibold text-slate-900">Landbases</h2>
+        <p className="mt-1 text-sm text-slate-600">All landbases visible to your organization, scoped by Row-Level Security.</p>
       </div>
 
+      {/* Map sits above the table. If no coordinates are synced
+          yet, we skip the map block entirely so the page doesn't
+          look broken. */}
+      {pins.length > 0 ? (
+        <div className="space-y-2">
+          <LandbaseMap pins={pins} />
+          {missingCoords > 0 ? (
+            <p className="text-xs text-slate-500">
+              {missingCoords} landbase{missingCoords === 1 ? '' : 's'} not shown
+              on the map (no coordinates in Salesforce yet).
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        {!landbases || landbases.length === 0 ? (
+        {all.length === 0 ? (
           <p className="px-6 py-6 text-sm text-slate-500">No landbases visible.</p>
         ) : (
           <table className="w-full text-sm">
@@ -64,7 +96,7 @@ export default async function LandbasesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {landbases.map((lb) => (
+              {all.map((lb) => (
                 <tr key={lb.id}>
                   <td className="px-6 py-3 text-slate-900">{lb.name}</td>
                   <td className="px-6 py-3 text-slate-700">{lb.country ?? '—'}</td>
@@ -79,8 +111,8 @@ export default async function LandbasesPage() {
         )}
       </div>
 
-      {landbases && landbases.length > 0 ? (
-        <p className="text-xs text-slate-400">{landbases.length} landbases</p>
+      {all.length > 0 ? (
+        <p className="text-xs text-slate-400">{all.length} landbases</p>
       ) : null}
     </div>
   )
