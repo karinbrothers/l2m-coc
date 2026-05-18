@@ -17,6 +17,8 @@ interface SalesforceLandbase {
   L2M_Landbase_Eligibility_Report_URL__c: string | null;
   L2M_Report_Expiration_Date__c: string | null;
   Latest_Verification_Effective_Date__c: string | null;
+  Latitude__c: number | null;
+  Longitude__c: number | null;
 }
 
 interface SalesforceAccount {
@@ -211,7 +213,7 @@ async function syncLandbasesPass(
   accessToken: string,
   instanceUrl: string,
 ): Promise<PassResult> {
-  const soql = `SELECT Id, Name, Country__c, L2M_Landbase_Eligibility__c, L2M_Landbase_Eligibility_Report_URL__c, L2M_Report_Expiration_Date__c, Latest_Verification_Effective_Date__c FROM Land_Base__c`;
+  const soql = `SELECT Id, Name, Country__c, L2M_Landbase_Eligibility__c, L2M_Landbase_Eligibility_Report_URL__c, L2M_Report_Expiration_Date__c, Latest_Verification_Effective_Date__c, Latitude__c, Longitude__c FROM Land_Base__c`;
 
   console.log('[sync] [landbases] Running SOQL...');
   const records = await runSOQLAll<SalesforceLandbase>(instanceUrl, accessToken, soql);
@@ -225,6 +227,8 @@ async function syncLandbasesPass(
     eligibility_report_url: r.L2M_Landbase_Eligibility_Report_URL__c ?? null,
     expiration_date: r.L2M_Report_Expiration_Date__c ?? null,
     verification_date: r.Latest_Verification_Effective_Date__c ?? null,
+    latitude: r.Latitude__c ?? null,
+    longitude: r.Longitude__c ?? null,
   }));
 
   const sfIds = rows.map((r) => r.salesforce_id);

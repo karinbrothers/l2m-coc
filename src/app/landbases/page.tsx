@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 
@@ -34,9 +35,17 @@ export default async function LandbasesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold text-slate-900">Landbases</h2>
-        <p className="mt-1 text-sm text-slate-600">All landbases visible to your organization, scoped by Row-Level Security.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">Landbases</h2>
+          <p className="mt-1 text-sm text-slate-600">All landbases visible to your organization, scoped by Row-Level Security.</p>
+        </div>
+        <Link
+          href="/landbases/map"
+          className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          View on map →
+        </Link>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
