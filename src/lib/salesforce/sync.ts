@@ -44,8 +44,7 @@ interface SalesforceLandbaseAssoc {
 }
 
 interface PassResult {
-  inserted: number;
-  updated: number;
+  upserted: number;
   total: number;
   errors: string[];
   skipped?: number;
@@ -99,6 +98,34 @@ async function runSOQLAll<T>(
   return out;
 }
 
+// Bulk-upsert in fixed-size chunks. Uses INSERT ... ON CONFLICT (col)
+// DO UPDATE under the hood, which means one HTTP round-trip per
+// chunk instead of one per row. The old per-row update loop was
+// what made the sync time out on Vercel Hobby (60 s function cap).
+async function chunkedUpsert(
+  supabase: AdminClient,
+  table: string,
+  rows: Record<string, unknown>[],
+  conflictColumn: string,
+  chunkSize = 500,
+): Promise<{ upserted: number; errors: string[] }> {
+  const errors: string[] = [];
+  let upserted = 0;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await supabase
+      .from(table)
+      .upsert(chunk, { onConflict: conflictColumn });
+    if (error) {
+      errors.push(`${table} upsert chunk ${i}: ${error.message}`);
+      console.error(`[sync] ${table} upsert chunk ${i} error:`, error.message);
+    } else {
+      upserted += chunk.length;
+    }
+  }
+  return { upserted, errors };
+}
+
 async function fetchExistingIds(
   supabase: AdminClient,
   table: string,
@@ -122,10 +149,8 @@ async function fetchExistingIds(
 
 // Map Salesforce eligibility values to our internal status enum.
 // CRITICAL: "Ineligible" contains the substring "eligible", so we
-// must check for it FIRST — otherwise an Ineligible landbase
-// silently gets stored as eligible. Default to 'ineligible' for
-// unknown values so we err on the side of excluding rather than
-// over-including landbases that aren't really verified.
+// must check for it FIRST. Default to 'ineligible' for unknown
+// values to err on the side of excluding.
 function mapEligibility(raw: string | null): string {
   const elig = String(raw ?? '').toLowerCase().trim();
   if (elig.includes('ineligible')) return 'ineligible';
@@ -133,6 +158,7 @@ function mapEligibility(raw: string | null): string {
   if (elig.includes('eligible')) return 'eligible';
   if (elig.includes('expired')) return 'expired';
   if (elig.includes('suspend')) return 'suspended';
+  if (elig.includes('pending')) return 'pending';
   return 'ineligible';
 }
 
@@ -161,47 +187,25 @@ async function syncOrganizationsPass(
   const accounts = await runSOQLAll<SalesforceAccount>(instanceUrl, accessToken, soql);
   console.log('[sync] [orgs] Got', accounts.length, 'records');
 
-  const sfIds = accounts.map((a) => a.Id);
-  const existingMap = await fetchExistingIds(supabase, 'organizations', sfIds);
+  const rows = accounts.map((a) => ({
+    name: a.Name,
+    salesforce_id: a.Id,
+    type: 'brand',
+    brand_partner_status: a.Brand_Partner_Status__c,
+    supply_chain_partner_status: a.Supply_Chain_Partner_Status__c,
+    l2m_retailer_status: a.L2M_Retailer_Status__c,
+    supply_chain_stage: a.Supply_Chain_Stage__c,
+  }));
 
-  const errors: string[] = [];
-  const toInsert: Record<string, unknown>[] = [];
-  const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
+  const { upserted, errors } = await chunkedUpsert(
+    supabase,
+    'organizations',
+    rows,
+    'salesforce_id',
+  );
 
-  for (const a of accounts) {
-    const base = {
-      name: a.Name,
-      brand_partner_status: a.Brand_Partner_Status__c,
-      supply_chain_partner_status: a.Supply_Chain_Partner_Status__c,
-      l2m_retailer_status: a.L2M_Retailer_Status__c,
-      supply_chain_stage: a.Supply_Chain_Stage__c,
-    };
-    const existingId = existingMap.get(a.Id);
-    if (existingId) {
-      toUpdate.push({ id: existingId, data: base });
-    } else {
-      toInsert.push({ ...base, salesforce_id: a.Id, type: 'brand' });
-    }
-  }
-
-  console.log('[sync] [orgs] insert:', toInsert.length, 'update:', toUpdate.length);
-
-  let inserted = 0;
-  if (toInsert.length) {
-    const { error } = await supabase.from('organizations').insert(toInsert);
-    if (error) errors.push(`Orgs insert: ${error.message}`);
-    else inserted = toInsert.length;
-  }
-
-  let updated = 0;
-  for (const { id, data } of toUpdate) {
-    const { error } = await supabase.from('organizations').update(data).eq('id', id);
-    if (error) errors.push(`Orgs update ${id}: ${error.message}`);
-    else updated++;
-  }
-
-  console.log('[sync] [orgs] done — inserted', inserted, 'updated', updated);
-  return { inserted, updated, total: accounts.length, errors };
+  console.log('[sync] [orgs] done — upserted', upserted);
+  return { upserted, total: accounts.length, errors };
 }
 
 // ============================================================================
@@ -219,10 +223,9 @@ async function syncLandbasesPass(
   const records = await runSOQLAll<SalesforceLandbase>(instanceUrl, accessToken, soql);
   console.log('[sync] [landbases] Got', records.length, 'records');
 
-  // Diagnostic: tally what Salesforce is actually sending back
-  // for L2M_Landbase_Eligibility__c. If everything in our DB ends
-  // up "eligible", this log tells us whether the bug is on our
-  // side (mapping) or upstream (Salesforce returning blanks).
+  // Diagnostic: tally what Salesforce is sending back so we can
+  // see at a glance whether the raw data has the variety we
+  // expect (eligible, ineligible, pending, etc.).
   const rawValueCounts = new Map<string, number>();
   for (const r of records) {
     const key = r.L2M_Landbase_Eligibility__c ?? '(null)';
@@ -245,40 +248,28 @@ async function syncLandbasesPass(
     longitude: r.Longitude__c ?? null,
   }));
 
-  const sfIds = rows.map((r) => r.salesforce_id);
-  const existingMap = await fetchExistingIds(supabase, 'landbases', sfIds);
-
-  const toInsert = rows.filter((r) => !existingMap.has(r.salesforce_id));
-  const toUpdate = rows.filter((r) => existingMap.has(r.salesforce_id));
-
-  console.log('[sync] [landbases] insert:', toInsert.length, 'update:', toUpdate.length);
-
-  const errors: string[] = [];
-  let inserted = 0;
-  const insertChunkSize = 500;
-  for (let i = 0; i < toInsert.length; i += insertChunkSize) {
-    const chunk = toInsert.slice(i, i + insertChunkSize);
-    const { error } = await supabase.from('landbases').insert(chunk);
-    if (error) errors.push(`Landbases insert chunk ${i}: ${error.message}`);
-    else inserted += chunk.length;
+  // Diagnostic: how many of each mapped status will we write?
+  const mappedCounts = new Map<string, number>();
+  for (const r of rows) {
+    mappedCounts.set(
+      r.eligibility_status,
+      (mappedCounts.get(r.eligibility_status) ?? 0) + 1,
+    );
   }
+  console.log(
+    '[sync] [landbases] Mapped status counts:',
+    Object.fromEntries(mappedCounts.entries()),
+  );
 
-  let updated = 0;
-  for (let i = 0; i < toUpdate.length; i++) {
-    const row = toUpdate[i];
-    const { error } = await supabase
-      .from('landbases')
-      .update(row)
-      .eq('salesforce_id', row.salesforce_id);
-    if (error) errors.push(`Landbases update ${row.salesforce_id}: ${error.message}`);
-    else updated++;
-    if ((i + 1) % 200 === 0) {
-      console.log('[sync] [landbases] Updated', i + 1, 'of', toUpdate.length);
-    }
-  }
+  const { upserted, errors } = await chunkedUpsert(
+    supabase,
+    'landbases',
+    rows,
+    'salesforce_id',
+  );
 
-  console.log('[sync] [landbases] done — inserted', inserted, 'updated', updated);
-  return { inserted, updated, total: records.length, errors };
+  console.log('[sync] [landbases] done — upserted', upserted);
+  return { upserted, total: records.length, errors };
 }
 
 // ============================================================================
@@ -300,51 +291,35 @@ async function syncSupplyGroupsPass(
   );
   const orgMap = await fetchExistingIds(supabase, 'organizations', accountSfIds);
 
-  const groupSfIds = groups.map((g) => g.Id);
-  const existingMap = await fetchExistingIds(supabase, 'supply_groups', groupSfIds);
-
-  const errors: string[] = [];
-  const toInsert: Record<string, unknown>[] = [];
-  const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
+  const rows: Record<string, unknown>[] = [];
   let skipped = 0;
-
   for (const g of groups) {
     const orgId = g.Account__c ? orgMap.get(g.Account__c) : undefined;
     if (!orgId) {
       skipped++;
       continue;
     }
-    const payload = { name: g.Name, organization_id: orgId };
-    const existingId = existingMap.get(g.Id);
-    if (existingId) {
-      toUpdate.push({ id: existingId, data: payload });
-    } else {
-      toInsert.push({ ...payload, salesforce_id: g.Id });
-    }
+    rows.push({
+      name: g.Name,
+      salesforce_id: g.Id,
+      organization_id: orgId,
+    });
   }
 
-  console.log(
-    '[sync] [supply_groups] insert:', toInsert.length,
-    'update:', toUpdate.length,
-    'skipped:', skipped,
+  const { upserted, errors } = await chunkedUpsert(
+    supabase,
+    'supply_groups',
+    rows,
+    'salesforce_id',
   );
 
-  let inserted = 0;
-  if (toInsert.length) {
-    const { error } = await supabase.from('supply_groups').insert(toInsert);
-    if (error) errors.push(`Supply groups insert: ${error.message}`);
-    else inserted = toInsert.length;
-  }
-
-  let updated = 0;
-  for (const { id, data } of toUpdate) {
-    const { error } = await supabase.from('supply_groups').update(data).eq('id', id);
-    if (error) errors.push(`Supply groups update ${id}: ${error.message}`);
-    else updated++;
-  }
-
-  console.log('[sync] [supply_groups] done — inserted', inserted, 'updated', updated);
-  return { inserted, updated, total: groups.length, errors, skipped };
+  console.log(
+    '[sync] [supply_groups] done — upserted',
+    upserted,
+    'skipped',
+    skipped,
+  );
+  return { upserted, total: groups.length, errors, skipped };
 }
 
 // ============================================================================
@@ -374,14 +349,8 @@ async function syncSupplyGroupLandbasesPass(
     fetchExistingIds(supabase, 'landbases', lbSfIds),
   ]);
 
-  const assocSfIds = assocs.map((a) => a.Id);
-  const existingMap = await fetchExistingIds(supabase, 'supply_group_landbases', assocSfIds);
-
-  const errors: string[] = [];
-  const toInsert: Record<string, unknown>[] = [];
-  const toUpdate: Array<{ id: string; data: Record<string, unknown> }> = [];
+  const rows: Record<string, unknown>[] = [];
   let skipped = 0;
-
   for (const a of assocs) {
     const supply_group_id = a.Supply_Group__c ? sgMap.get(a.Supply_Group__c) : undefined;
     const landbase_id = a.Landbase__c ? lbMap.get(a.Landbase__c) : undefined;
@@ -389,43 +358,28 @@ async function syncSupplyGroupLandbasesPass(
       skipped++;
       continue;
     }
-    const payload = {
+    rows.push({
+      salesforce_id: a.Id,
       supply_group_id,
       landbase_id,
       association_status: a.Association_Status__c,
-    };
-    const existingId = existingMap.get(a.Id);
-    if (existingId) {
-      toUpdate.push({ id: existingId, data: payload });
-    } else {
-      toInsert.push({ ...payload, salesforce_id: a.Id });
-    }
+    });
   }
 
-  console.log(
-    '[sync] [junction] insert:', toInsert.length,
-    'update:', toUpdate.length,
-    'skipped:', skipped,
+  const { upserted, errors } = await chunkedUpsert(
+    supabase,
+    'supply_group_landbases',
+    rows,
+    'salesforce_id',
   );
 
-  let inserted = 0;
-  const insertChunkSize = 500;
-  for (let i = 0; i < toInsert.length; i += insertChunkSize) {
-    const chunk = toInsert.slice(i, i + insertChunkSize);
-    const { error } = await supabase.from('supply_group_landbases').insert(chunk);
-    if (error) errors.push(`Junction insert chunk ${i}: ${error.message}`);
-    else inserted += chunk.length;
-  }
-
-  let updated = 0;
-  for (const { id, data } of toUpdate) {
-    const { error } = await supabase.from('supply_group_landbases').update(data).eq('id', id);
-    if (error) errors.push(`Junction update ${id}: ${error.message}`);
-    else updated++;
-  }
-
-  console.log('[sync] [junction] done — inserted', inserted, 'updated', updated);
-  return { inserted, updated, total: assocs.length, errors, skipped };
+  console.log(
+    '[sync] [junction] done — upserted',
+    upserted,
+    'skipped',
+    skipped,
+  );
+  return { upserted, total: assocs.length, errors, skipped };
 }
 
 // ============================================================================
@@ -502,7 +456,7 @@ export async function syncSalesforceLandbases(organizationId: string) {
   console.log('[sync] DONE');
   console.log('[sync] Summary:', JSON.stringify({
     orgs: orgsResult,
-    landbases: { i: landbasesResult.inserted, u: landbasesResult.updated, t: landbasesResult.total },
+    landbases: landbasesResult,
     supplyGroups: supplyGroupsResult,
     junction: junctionResult,
     errors: allErrors.length,
@@ -510,8 +464,7 @@ export async function syncSalesforceLandbases(organizationId: string) {
 
   return {
     totalFromSalesforce: landbasesResult.total,
-    inserted: landbasesResult.inserted,
-    updated: landbasesResult.updated,
+    upserted: landbasesResult.upserted,
     errors: allErrors,
     orgs: orgsResult,
     supplyGroups: supplyGroupsResult,
