@@ -210,6 +210,19 @@ async function syncOrganizationsPass(
     };
   });
 
+  // Diagnostic: log the first row's payload + key counts so we
+  // can see exactly what we're sending to Supabase.
+  if (rows.length > 0) {
+    console.log(
+      '[sync] [orgs] First row payload:',
+      JSON.stringify(rows[0]),
+    );
+    console.log(
+      '[sync] [orgs] Keys in payload:',
+      Object.keys(rows[0]).join(', '),
+    );
+  }
+
   const { upserted, errors } = await chunkedUpsert(
     supabase,
     'organizations',
