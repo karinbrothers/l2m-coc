@@ -97,7 +97,6 @@ export default function LandbaseMap({ pins }: { pins: LandbasePin[] }) {
       btn.textContent = isSatellite ? 'Light' : 'Satellite'
     }
     styleSwitcher.appendChild(btn)
-    // @ts-expect-error - custom HTMLElement control
     map.addControl({ onAdd: () => styleSwitcher, onRemove: () => {} }, 'top-right')
 
     map.on('load', () => {
