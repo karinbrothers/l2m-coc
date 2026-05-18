@@ -187,15 +187,28 @@ async function syncOrganizationsPass(
   const accounts = await runSOQLAll<SalesforceAccount>(instanceUrl, accessToken, soql);
   console.log('[sync] [orgs] Got', accounts.length, 'records');
 
-  const rows = accounts.map((a) => ({
-    name: a.Name,
-    salesforce_id: a.Id,
-    type: 'brand',
-    brand_partner_status: a.Brand_Partner_Status__c,
-    supply_chain_partner_status: a.Supply_Chain_Partner_Status__c,
-    l2m_retailer_status: a.L2M_Retailer_Status__c,
-    supply_chain_stage: a.Supply_Chain_Stage__c,
-  }));
+  const rows = accounts.map((a) => {
+    // Derive the boolean stage flags from the textual stage so
+    // the orgs table's NOT NULL columns get populated on INSERT
+    // (upsert tries INSERT first; if that fails, no UPDATE
+    // happens either).
+    const stage = (a.Supply_Chain_Stage__c ?? '').toLowerCase().trim();
+    const isFsp =
+      stage === 'first_stage_processor' || stage === 'first stage processor';
+    const isFinalBrand =
+      stage === 'final_brand' || stage === 'final brand';
+    return {
+      name: a.Name,
+      salesforce_id: a.Id,
+      type: 'brand',
+      brand_partner_status: a.Brand_Partner_Status__c,
+      supply_chain_partner_status: a.Supply_Chain_Partner_Status__c,
+      l2m_retailer_status: a.L2M_Retailer_Status__c,
+      supply_chain_stage: a.Supply_Chain_Stage__c,
+      is_first_stage_processor: isFsp,
+      is_final_brand: isFinalBrand,
+    };
+  });
 
   const { upserted, errors } = await chunkedUpsert(
     supabase,
