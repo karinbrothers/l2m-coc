@@ -235,6 +235,34 @@ async function syncOrganizationsPass(
       '[sync] [orgs] DEBUG keys:',
       Object.keys(r0).join(', '),
     );
+
+    // Scan ALL rows for any with null/undefined boolean fields.
+    // If even one slips through, the chunk insert fails with the
+    // null-value error.
+    const badFsp = rows.filter(
+      (r) =>
+        (r as Record<string, unknown>).is_first_stage_processor === null ||
+        (r as Record<string, unknown>).is_first_stage_processor === undefined,
+    );
+    const badBrand = rows.filter(
+      (r) =>
+        (r as Record<string, unknown>).is_final_brand === null ||
+        (r as Record<string, unknown>).is_final_brand === undefined,
+    );
+    console.log(
+      '[sync] [orgs] DEBUG bad rows — null/undefined is_first_stage_processor:',
+      badFsp.length,
+    );
+    console.log(
+      '[sync] [orgs] DEBUG bad rows — null/undefined is_final_brand:',
+      badBrand.length,
+    );
+    if (badFsp.length > 0) {
+      console.log(
+        '[sync] [orgs] DEBUG sample bad FSP row:',
+        JSON.stringify(badFsp[0]),
+      );
+    }
   }
 
   const { upserted, errors } = await chunkedUpsert(
