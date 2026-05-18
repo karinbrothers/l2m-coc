@@ -90,7 +90,11 @@ export default function LandbaseMap({
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: 'mapbox://styles/mapbox/light-v11',
+      // Default to satellite-streets so users see actual land at
+      // load — much more compelling for L2M than a plain street
+      // map. The toggle button switches to a clean light map for
+      // when satellite is too busy.
+      style: 'mapbox://styles/mapbox/satellite-streets-v12',
       center: [0, 20],
       zoom: 1.5,
     })
@@ -99,16 +103,18 @@ export default function LandbaseMap({
     map.addControl(new mapboxgl.NavigationControl(), 'top-right')
     map.addControl(new mapboxgl.FullscreenControl(), 'top-right')
 
-    // Custom satellite/light toggle
+    // Custom satellite/light toggle — starts on satellite (matches
+    // the default style above), button label shows the OTHER mode
+    // so the user knows what they'll get when they click.
     const styleSwitcher = document.createElement('div')
     styleSwitcher.className = 'mapboxgl-ctrl mapboxgl-ctrl-group'
     const btn = document.createElement('button')
     btn.type = 'button'
-    btn.textContent = 'Satellite'
+    btn.textContent = 'Map'
     btn.style.padding = '6px 10px'
     btn.style.fontSize = '12px'
     btn.style.fontWeight = '500'
-    let isSatellite = false
+    let isSatellite = true
     btn.onclick = () => {
       isSatellite = !isSatellite
       map.setStyle(
@@ -116,7 +122,7 @@ export default function LandbaseMap({
           ? 'mapbox://styles/mapbox/satellite-streets-v12'
           : 'mapbox://styles/mapbox/light-v11',
       )
-      btn.textContent = isSatellite ? 'Light' : 'Satellite'
+      btn.textContent = isSatellite ? 'Map' : 'Satellite'
     }
     styleSwitcher.appendChild(btn)
     map.addControl(

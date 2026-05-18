@@ -81,8 +81,26 @@ export default function LandbasesView({ landbases }: { landbases: Landbase[] }) 
 
   return (
     <div className="space-y-4">
-      {/* Search + filter bar */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Map (top of page) */}
+      {pins.length > 0 ? (
+        <div className="space-y-2">
+          <LandbaseMap pins={pins} selectedId={selectedId} />
+          {missingCoords > 0 ? (
+            <p className="text-xs text-slate-500">
+              {missingCoords} landbase{missingCoords === 1 ? '' : 's'} not shown
+              on the map (no coordinates in Salesforce yet).
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          No mappable landbases match the current filter.
+        </div>
+      )}
+
+      {/* Search + filter bar — sits under the map and drives both
+          the map's pins and the table below */}
+      <div className="flex flex-wrap items-center gap-3 pt-2">
         <input
           type="search"
           value={search}
@@ -103,23 +121,6 @@ export default function LandbasesView({ landbases }: { landbases: Landbase[] }) 
           ))}
         </select>
       </div>
-
-      {/* Map */}
-      {pins.length > 0 ? (
-        <div className="space-y-2">
-          <LandbaseMap pins={pins} selectedId={selectedId} />
-          {missingCoords > 0 ? (
-            <p className="text-xs text-slate-500">
-              {missingCoords} landbase{missingCoords === 1 ? '' : 's'} not shown
-              on the map (no coordinates in Salesforce yet).
-            </p>
-          ) : null}
-        </div>
-      ) : (
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          No mappable landbases match the current filter.
-        </div>
-      )}
 
       {/* Table */}
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
